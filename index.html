@@ -1385,30 +1385,40 @@ function isHoloCard(card) {
   return !NON_HOLO_RARITIES.has(rarity);
 }
 
-// Not every image exists at every quality/format. Try a few before giving up
-// and showing a text placeholder instead of a broken image icon.
-//
-// This used to run through a hand-rolled concurrency queue to avoid loading
-// too many images at once. That queue caused two real bugs: a dialog image
-// (which the user is looking at *right now*) could get stuck behind a large
-// backlog of off-screen grid thumbnails, and a watchdog timer meant to
-// prevent stalls could fire before a lazy-loaded image had even started
-// fetching. The grid's <img loading="lazy"> attribute already tells the
-// browser to defer off-screen images and it does this correctly on its own
-// — there's no need to reimplement that ourselves, and doing so only made
-// things worse. This version just chains through candidate URLs directly.
-function imageCandidates(imageBase) {
-  if (!imageBase) return [];
-  return [
-    `${imageBase}/low.webp`,
-    `${imageBase}/high.webp`,
-    `${imageBase}/low.png`,
-    `${imageBase}/high.png`,
-  ];
+// Not every image exists at every quality/format on TCGdex — and for some
+// sets (older/niche ones like Skyridge specifically), TCGdex's own image
+// coverage genuinely has gaps that haven't been filled in yet. When that
+// happens, fall back to images.pokemontcg.io, a second long-established,
+// independent database that's specifically built for third-party apps to
+// hotlink card images from. Conveniently, both databases converged on the
+// same {setId}-{localId} card ID scheme (e.g. "ecard3-H9"), so the ID we
+// already have is reused directly — no separate lookup needed.
+function imageCandidates(imageBase, cardId) {
+  const candidates = [];
+  if (imageBase) {
+    candidates.push(
+      `${imageBase}/low.webp`,
+      `${imageBase}/high.webp`,
+      `${imageBase}/low.png`,
+      `${imageBase}/high.png`,
+    );
+  }
+  if (cardId) {
+    const dash = cardId.lastIndexOf("-");
+    if (dash > 0) {
+      const setId = cardId.slice(0, dash);
+      const localId = cardId.slice(dash + 1);
+      candidates.push(
+        `https://images.pokemontcg.io/${setId}/${localId}_hires.png`,
+        `https://images.pokemontcg.io/${setId}/${localId}.png`,
+      );
+    }
+  }
+  return candidates;
 }
 
-function setupImage(imgEl, imageBase, name, setName) {
-  const candidates = imageCandidates(imageBase);
+function setupImage(imgEl, imageBase, name, setName, cardId) {
+  const candidates = imageCandidates(imageBase, cardId);
   if (!candidates.length) {
     showImagePlaceholder(imgEl, name, null, setName); // no URL at all — nothing to retry
     return;
@@ -1418,7 +1428,7 @@ function setupImage(imgEl, imageBase, name, setName) {
 
   const attempt = () => {
     if (idx >= candidates.length) {
-      showImagePlaceholder(imgEl, name, () => setupImage(imgEl, imageBase, name, setName), setName);
+      showImagePlaceholder(imgEl, name, () => setupImage(imgEl, imageBase, name, setName, cardId), setName);
       return;
     }
     imgEl.src = candidates[idx];
@@ -1505,7 +1515,7 @@ function buildTile({ id, name, image, metaText, type, holo, setName, savedState 
 
   const img = el(".card-thumb", node);
   img.alt = name;
-  setupImage(img, image, name, setName);
+  setupImage(img, image, name, setName, id);
 
   // .card-thumb-btn is a div (not a real <button>) so a retry <button> can
   // legally live inside its placeholder without illegal button-in-button
@@ -1742,7 +1752,7 @@ async function openCardDialog(cardId, actionConfig) {
       <h2>${card.name}${holo ? ' <span class="holo-badge" style="vertical-align:middle;">✦ Holo</span>' : ""}</h2>
       <p class="dialog-meta">${meta}</p>
     `;
-    setupImage(el(".dialog-img", content), card.image, card.name, card.set?.name);
+    setupImage(el(".dialog-img", content), card.image, card.name, card.set?.name, card.id);
 
     // Some callers (e.g. the binder pile) want a context-specific destructive
     // action available right here in the detail view, rather than forcing
@@ -2033,7 +2043,7 @@ function renderPageFace(leaf, myBinderObj) {
 
       const img = document.createElement("img");
       img.alt = slotCard.name;
-      setupImage(img, slotCard.image, slotCard.name, slotCard.setName);
+      setupImage(img, slotCard.image, slotCard.name, slotCard.setName, slotCard.id);
       slot.appendChild(img);
 
       const removeBtn = document.createElement("button");
@@ -2127,7 +2137,7 @@ function renderPile(myBinderObj) {
 
     const img = document.createElement("img");
     img.alt = card.name;
-    setupImage(img, card.image, card.name, card.setName);
+    setupImage(img, card.image, card.name, card.setName, card.id);
     item.appendChild(img);
 
     const viewBtn = document.createElement("button");
