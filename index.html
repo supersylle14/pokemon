@@ -597,15 +597,20 @@ function getFullCard(cardId) {
 // Base Set Charizard — are ONLY ever printed as holo, so the API just marks
 // them "normal": true and never sets holo: true, even though they're fully
 // holographic. The reliable signal is the rarity text itself.
-const HOLO_RARITY_KEYWORDS = [
-  "holo", "rainbow", "secret", "hyper", "radiant", "amazing",
-  "illustration", "full art", "gold", "shiny", "ultra",
-];
+//
+// Rather than listing every holo rarity tier by name (Double Rare, ACE SPEC
+// Rare, Rare BREAK, LEGEND, Crown Rare, Special Illustration Rare... the list
+// never stops growing and always misses the next new one), list the small,
+// stable set of rarities that are definitely NOT holographic, and treat
+// everything else as holo. Pokémon has only ever had a handful of plain,
+// non-foil rarity tiers — everything past that is some kind of special foil
+// treatment.
+const NON_HOLO_RARITIES = new Set(["", "none", "n/a", "common", "uncommon", "rare"]);
 
 function isHoloCard(card) {
   if (card?.variants?.holo) return true;
-  const rarity = (card?.rarity || "").toLowerCase();
-  return HOLO_RARITY_KEYWORDS.some((kw) => rarity.includes(kw));
+  const rarity = (card?.rarity || "").trim().toLowerCase();
+  return !NON_HOLO_RARITIES.has(rarity);
 }
 
 // Not every image exists at every quality/format. Try a few before giving up
