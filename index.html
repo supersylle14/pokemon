@@ -202,7 +202,21 @@ button { font-family: var(--font-body); cursor: pointer; }
 
 .card-tile:hover { transform: translateY(-2px); border-color: var(--holo); }
 
-.card-thumb-btn { background: none; border: none; padding: 0; display: block; width: 100%; position: relative; }
+.card-thumb-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  display: block;
+  width: 100%;
+  position: relative;
+  cursor: pointer;
+}
+
+.card-thumb-btn:focus-visible {
+  outline: 2px solid var(--holo);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
 
 .card-thumb-wrap {
   position: relative;
@@ -224,14 +238,31 @@ button { font-family: var(--font-body); cursor: pointer; }
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   text-align: center;
   padding: 10px;
   font-family: var(--font-display);
   font-size: 14px;
   color: var(--paper-dim);
   background: var(--ink-panel-raised);
+}
+
+.thumb-retry-btn {
+  background: none;
+  border: 1px solid var(--line-soft);
+  color: var(--paper-dim);
+  font-family: var(--font-body);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.thumb-retry-btn:hover {
+  border-color: var(--holo);
+  color: var(--paper);
 }
 
 /* Holo sparkles — a few small twinkling sparks in the corner, only shown
@@ -459,7 +490,7 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 
 <template id="card-tile-template">
   <article class="card-tile">
-    <button type="button" class="card-thumb-btn">
+    <div class="card-thumb-btn" role="button" tabindex="0">
       <div class="card-thumb-wrap">
         <img class="card-thumb" loading="lazy" alt="">
       </div>
@@ -468,7 +499,7 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
         <span class="spark spark-b"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c.4 3.6 1.1 6.1 2.1 7.4 1.3 1.7 3.6 2.5 6.9 2.6-3.3.1-5.6.9-6.9 2.6-1 1.3-1.7 3.8-2.1 7.4-.4-3.6-1.1-6.1-2.1-7.4C8.6 11.5 6.3 10.7 3 10.6c3.3-.1 5.6-.9 6.9-2.6C10.9 6.7 11.6 4.2 12 0z"/></svg></span>
         <span class="spark spark-c"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c.4 3.6 1.1 6.1 2.1 7.4 1.3 1.7 3.6 2.5 6.9 2.6-3.3.1-5.6.9-6.9 2.6-1 1.3-1.7 3.8-2.1 7.4-.4-3.6-1.1-6.1-2.1-7.4C8.6 11.5 6.3 10.7 3 10.6c3.3-.1 5.6-.9 6.9-2.6C10.9 6.7 11.6 4.2 12 0z"/></svg></span>
       </div>
-    </button>
+    </div>
     <div class="card-info">
       <p class="card-name"></p>
       <span class="holo-badge" hidden>✦ Holo</span>
@@ -576,8 +607,36 @@ function isHoloCard(card) {
   const rarity = (card?.rarity || "").toLowerCase();
   return HOLO_RARITY_KEYWORDS.some((kw) => rarity.includes(kw));
 }
-// not every image exists at every quality/format. Try a few options before
-// giving up and showing a text placeholder instead of a broken image icon.
+
+// TCGdex has no hard rate limit, but does ask API consumers to "be
+// considerate" — and a page with a few hundred card tiles all requesting
+// images at once is not considerate. This caps how many images load
+// simultaneously; everything else waits its turn in a queue.
+const MAX_CONCURRENT_IMAGE_LOADS = 8;
+let activeImageLoads = 0;
+const imageLoadQueue = [];
+
+function runImageTask(task) {
+  imageLoadQueue.push(task);
+  pumpImageQueue();
+}
+
+function pumpImageQueue() {
+  while (activeImageLoads < MAX_CONCURRENT_IMAGE_LOADS && imageLoadQueue.length) {
+    const task = imageLoadQueue.shift();
+    activeImageLoads += 1;
+    task(() => {
+      activeImageLoads -= 1;
+      pumpImageQueue();
+    });
+  }
+}
+
+// Not every image exists at every quality/format, and a small share of
+// requests can fail transiently (especially under the queueing above) rather
+// than because the image is genuinely missing. Try each candidate URL twice
+// with a short pause before moving to the next, and only show the "no image"
+// placeholder once every option has actually been exhausted.
 function imageCandidates(imageBase) {
   if (!imageBase) return [];
   return [
@@ -591,30 +650,69 @@ function imageCandidates(imageBase) {
 function setupImage(imgEl, imageBase, name) {
   const candidates = imageCandidates(imageBase);
   if (!candidates.length) {
-    showImagePlaceholder(imgEl, name);
+    showImagePlaceholder(imgEl, name, null); // no URL at all — nothing to retry
     return;
   }
-  let idx = 0;
-  imgEl.onerror = () => {
-    idx += 1;
-    if (idx < candidates.length) {
-      imgEl.src = candidates[idx];
-    } else {
-      showImagePlaceholder(imgEl, name);
-    }
-  };
-  imgEl.src = candidates[0];
+
+  runImageTask((done) => {
+    let idx = 0;
+    let retried = false;
+
+    imgEl.onload = () => {
+      imgEl.onerror = null;
+      done();
+    };
+
+    imgEl.onerror = () => {
+      if (!retried) {
+        retried = true;
+        setTimeout(() => { imgEl.src = candidates[idx]; }, 300);
+        return;
+      }
+      retried = false;
+      idx += 1;
+      if (idx < candidates.length) {
+        imgEl.src = candidates[idx];
+      } else {
+        showImagePlaceholder(imgEl, name, () => setupImage(imgEl, imageBase, name));
+        done();
+      }
+    };
+
+    imgEl.src = candidates[0];
+  });
 }
 
-function showImagePlaceholder(imgEl, name) {
+function showImagePlaceholder(imgEl, name, retry) {
   imgEl.onerror = null;
   imgEl.style.display = "none";
   const wrap = imgEl.closest(".card-thumb-wrap");
-  if (wrap && !wrap.querySelector(".card-thumb-placeholder")) {
-    const ph = document.createElement("div");
+  if (!wrap) return;
+
+  let ph = wrap.querySelector(".card-thumb-placeholder");
+  if (!ph) {
+    ph = document.createElement("div");
     ph.className = "card-thumb-placeholder";
-    ph.textContent = name || "No image";
     wrap.appendChild(ph);
+  }
+  ph.innerHTML = "";
+
+  const label = document.createElement("span");
+  label.textContent = name || "No image";
+  ph.appendChild(label);
+
+  if (retry) {
+    const retryBtn = document.createElement("button");
+    retryBtn.type = "button";
+    retryBtn.className = "thumb-retry-btn";
+    retryBtn.textContent = "Retry";
+    retryBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      ph.remove();
+      imgEl.style.display = "block";
+      retry();
+    });
+    ph.appendChild(retryBtn);
   }
 }
 
@@ -633,6 +731,17 @@ function buildTile({ id, name, image, metaText, type, holo, savedState }) {
   const img = el(".card-thumb", node);
   img.alt = name;
   setupImage(img, image, name);
+
+  // .card-thumb-btn is a div (not a real <button>) so a retry <button> can
+  // legally live inside its placeholder without illegal button-in-button
+  // nesting. Restore keyboard activation manually since we lost it.
+  const thumbBtn = el(".card-thumb-btn", node);
+  thumbBtn.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      thumbBtn.click();
+    }
+  });
 
   el(".card-name", node).textContent = name;
   el(".holo-badge", node).hidden = !holo;
