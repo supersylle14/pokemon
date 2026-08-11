@@ -656,30 +656,42 @@ function setupImage(imgEl, imageBase, name) {
 
   runImageTask((done) => {
     let idx = 0;
-    let retried = false;
+    let settled = false;
+    let watchdog = null;
 
-    imgEl.onload = () => {
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(watchdog);
+      imgEl.onload = null;
       imgEl.onerror = null;
       done();
     };
 
-    imgEl.onerror = () => {
-      if (!retried) {
-        retried = true;
-        setTimeout(() => { imgEl.src = candidates[idx]; }, 300);
+    const attempt = () => {
+      if (idx >= candidates.length) {
+        showImagePlaceholder(imgEl, name, () => setupImage(imgEl, imageBase, name));
+        finish();
         return;
       }
-      retried = false;
-      idx += 1;
-      if (idx < candidates.length) {
-        imgEl.src = candidates[idx];
-      } else {
-        showImagePlaceholder(imgEl, name, () => setupImage(imgEl, imageBase, name));
-        done();
-      }
+      clearTimeout(watchdog);
+      // A hung request (no load AND no error event) must not be able to
+      // block this slot forever — that would stall every image queued
+      // behind it. Give each attempt a few seconds, then move on.
+      watchdog = setTimeout(() => {
+        idx += 1;
+        attempt();
+      }, 6000);
+      imgEl.src = candidates[idx];
     };
 
-    imgEl.src = candidates[0];
+    imgEl.onload = finish;
+    imgEl.onerror = () => {
+      idx += 1;
+      attempt();
+    };
+
+    attempt();
   });
 }
 
