@@ -1157,8 +1157,18 @@ function loadMyBinders() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_MYBINDERS);
     const parsed = raw ? JSON.parse(raw) : [];
-    // Normalize older saves that predate the "pile" field.
-    parsed.forEach((b) => { if (!Array.isArray(b.pile)) b.pile = []; });
+    parsed.forEach((b) => {
+      if (!Array.isArray(b.pile)) b.pile = [];
+      // Migrate older saves where a "page" was a single flat slot array —
+      // real binder pages are double-sided, so wrap it as the front and
+      // give it a blank back.
+      b.pages = (b.pages || []).map((page) => {
+        if (Array.isArray(page)) {
+          return { front: page, back: new Array(b.cols * b.rows).fill(null) };
+        }
+        return page;
+      });
+    });
     return parsed;
   } catch {
     return [];
@@ -1175,13 +1185,17 @@ function findMyBinder(id) {
   return myBinders.find((b) => b.id === id) || null;
 }
 
+function makeBlankPage(cols, rows) {
+  return { front: new Array(cols * rows).fill(null), back: new Array(cols * rows).fill(null) };
+}
+
 function createMyBinder(name, cols, rows) {
   const newBinder = {
     id: `binder_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name: name || "My Binder",
     cols,
     rows,
-    pages: [new Array(cols * rows).fill(null)],
+    pages: [makeBlankPage(cols, rows)],
     pile: [],
     createdAt: Date.now(),
   };
@@ -1198,15 +1212,18 @@ function deleteMyBinder(id) {
 }
 
 function addPageToBinder(myBinderObj) {
-  myBinderObj.pages.push(new Array(myBinderObj.cols * myBinderObj.rows).fill(null));
+  myBinderObj.pages.push(makeBlankPage(myBinderObj.cols, myBinderObj.rows));
   saveMyBinders();
 }
 
 function removePageFromBinder(myBinderObj, pageIndex) {
   // Cards on a removed page go back to the pile rather than being deleted —
-  // removing a page should never destroy a card, just un-place it.
-  const page = myBinderObj.pages[pageIndex] || [];
-  page.forEach((card) => { if (card) myBinderObj.pile.push(card); });
+  // removing a page should never destroy a card, just un-place it. A page
+  // is one physical sheet, so both its front and back come out together.
+  const page = myBinderObj.pages[pageIndex];
+  if (page) {
+    [...page.front, ...page.back].forEach((card) => { if (card) myBinderObj.pile.push(card); });
+  }
   myBinderObj.pages.splice(pageIndex, 1);
   saveMyBinders();
 }
@@ -1226,16 +1243,18 @@ function binderStats(myBinderObj) {
   let placed = 0;
   let total = 0;
   myBinderObj.pages.forEach((page) => {
-    total += page.length;
-    placed += page.filter((slot) => slot !== null).length;
+    [page.front, page.back].forEach((side) => {
+      total += side.length;
+      placed += side.filter((slot) => slot !== null).length;
+    });
   });
   return { placed, total, pileCount: myBinderObj.pile.length };
 }
 
 // A "location" describes where a card currently is (or is going):
-//   { type: "pile" }                              — the unplaced pile
-//   { type: "pile", pileIndex: n }                 — a specific pile card
-//   { type: "slot", pageIndex: n, slotIndex: n }   — a specific page slot
+//   { type: "pile" }                                          — the unplaced pile
+//   { type: "pile", pileIndex: n }                             — a specific pile card
+//   { type: "slot", pageIndex: n, side: "front"|"back", slotIndex: n } — a specific page slot
 //
 // moveCard handles every combination: placing a pile card into an empty
 // slot, swapping two placed cards, swapping a pile card into an occupied
@@ -1246,24 +1265,27 @@ function moveCard(myBinderObj, from, to) {
 
   const getCard = (loc) => {
     if (loc.type === "pile") return typeof loc.pileIndex === "number" ? myBinderObj.pile[loc.pileIndex] : null;
-    return myBinderObj.pages[loc.pageIndex]?.[loc.slotIndex] ?? null;
+    return myBinderObj.pages[loc.pageIndex]?.[loc.side]?.[loc.slotIndex] ?? null;
   };
   const clearCard = (loc) => {
     if (loc.type === "pile") {
       if (typeof loc.pileIndex === "number") myBinderObj.pile.splice(loc.pileIndex, 1);
     } else {
-      myBinderObj.pages[loc.pageIndex][loc.slotIndex] = null;
+      myBinderObj.pages[loc.pageIndex][loc.side][loc.slotIndex] = null;
     }
   };
   const setCard = (loc, card) => {
     if (loc.type === "pile") {
       myBinderObj.pile.push(card);
     } else {
-      myBinderObj.pages[loc.pageIndex][loc.slotIndex] = card;
+      myBinderObj.pages[loc.pageIndex][loc.side][loc.slotIndex] = card;
     }
   };
 
-  if (from.type === "slot" && to.type === "slot" && from.pageIndex === to.pageIndex && from.slotIndex === to.slotIndex) {
+  if (
+    from.type === "slot" && to.type === "slot" &&
+    from.pageIndex === to.pageIndex && from.side === to.side && from.slotIndex === to.slotIndex
+  ) {
     return; // dropped back where it started
   }
 
@@ -1280,13 +1302,13 @@ function moveCard(myBinderObj, from, to) {
   // Destination is a specific slot.
   const displacedCard = getCard(to);
   clearCard(from);
-  myBinderObj.pages[to.pageIndex][to.slotIndex] = movingCard;
+  myBinderObj.pages[to.pageIndex][to.side][to.slotIndex] = movingCard;
   if (displacedCard) {
     // The slot was occupied — its card goes wherever the moving card came
     // from (a true swap for slot<->slot, or back into the pile if the
     // moving card came from the pile).
     if (from.type === "slot") {
-      myBinderObj.pages[from.pageIndex][from.slotIndex] = displacedCard;
+      myBinderObj.pages[from.pageIndex][from.side][from.slotIndex] = displacedCard;
     } else {
       myBinderObj.pile.push(displacedCard);
     }
@@ -1869,7 +1891,7 @@ function isSameLocation(a, b) {
   if (!a || !b) return false;
   if (a.type !== b.type) return false;
   if (a.type === "pile") return a.pileIndex === b.pileIndex;
-  return a.pageIndex === b.pageIndex && a.slotIndex === b.slotIndex;
+  return a.pageIndex === b.pageIndex && a.side === b.side && a.slotIndex === b.slotIndex;
 }
 
 function selectSource(loc, label) {
@@ -1899,7 +1921,11 @@ function completeMoveTo(loc) {
 
 function faceLabel(leaf, myBinderObj) {
   if (leaf.kind === "cover") return leaf.side === "front" ? "Front cover" : "Back cover";
-  return `Page ${leaf.pageIndex + 1} of ${myBinderObj.pages.length}`;
+  // Number pages the way a real book's printed page numbers work — each
+  // side is its own page number, not each physical sheet.
+  const visibleNumber = leaf.pageIndex * 2 + (leaf.side === "front" ? 1 : 2);
+  const totalVisible = myBinderObj.pages.length * 2;
+  return `Page ${visibleNumber} of ${totalVisible}`;
 }
 
 // A real binder's cover is exactly as big as the pages inside it. Both
@@ -1942,7 +1968,9 @@ function renderPageFace(leaf, myBinderObj) {
   const face = document.createElement("div");
   face.className = "binder-face";
   const pageIdx = leaf.pageIndex;
+  const side = leaf.side;
   const page = myBinderObj.pages[pageIdx];
+  const slots = page[side];
 
   const sheet = document.createElement("div");
   sheet.className = "binder-page-sheet";
@@ -1952,8 +1980,8 @@ function renderPageFace(leaf, myBinderObj) {
   slotGrid.className = "binder-slot-grid";
   slotGrid.style.gridTemplateColumns = `repeat(${myBinderObj.cols}, 1fr)`;
 
-  page.forEach((slotCard, slotIdx) => {
-    const loc = { type: "slot", pageIndex: pageIdx, slotIndex: slotIdx };
+  slots.forEach((slotCard, slotIdx) => {
+    const loc = { type: "slot", pageIndex: pageIdx, side, slotIndex: slotIdx };
     const slot = document.createElement("div");
     slot.className = "binder-slot";
 
@@ -1992,7 +2020,7 @@ function renderPageFace(leaf, myBinderObj) {
           completeMoveTo(loc);
         } else {
           openCardDialog(slotCard.id, {
-            label: "Delete completely",
+            label: "Delete",
             onAction: () => deleteCardCompletely(myBinderObj.id, loc),
           });
         }
@@ -2027,7 +2055,7 @@ function renderPageFace(leaf, myBinderObj) {
   removePageBtn.className = "ghost-btn danger";
   removePageBtn.textContent = "Remove this page";
   removePageBtn.addEventListener("click", () => {
-    const hasCards = page.some((s) => s !== null);
+    const hasCards = [...page.front, ...page.back].some((s) => s !== null);
     const warning = hasCards
       ? "This page has cards on it. Remove it anyway? They'll go back to the pile."
       : "Remove this page?";
@@ -2070,7 +2098,7 @@ function renderPile(myBinderObj) {
     viewBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       openCardDialog(card.id, {
-        label: "Delete completely",
+        label: "Delete",
         onAction: () => deleteCardCompletely(myBinderObj.id, loc),
       });
     });
@@ -2134,13 +2162,19 @@ function renderBinderDetail() {
   renderPile(myBinderObj);
   renderRearrangeBanner();
 
-  // Leaves = every visible face in order: front cover, each content page,
-  // back cover. Spreads pair them up two at a time, so opening the binder
-  // shows [cover, page 1], then [page 2, page 3], ... ending on
-  // [last page, back cover] — like actually holding it open.
+  // Leaves = every visible face in order: front cover, then each page's
+  // front, then that same page's back, then the next page's front, and so
+  // on — like a real double-sided binder sheet — ending on the back cover.
+  // Because every physical page contributes exactly two faces, this always
+  // pairs up into clean spreads with no orphaned cover, regardless of how
+  // many pages there are: [cover, page1-front], [page1-back, page2-front],
+  // ..., [pageN-back, cover].
   const leaves = [
     { kind: "cover", side: "front" },
-    ...myBinderObj.pages.map((_, i) => ({ kind: "page", pageIndex: i })),
+    ...myBinderObj.pages.flatMap((_, i) => [
+      { kind: "page", pageIndex: i, side: "front" },
+      { kind: "page", pageIndex: i, side: "back" },
+    ]),
     { kind: "cover", side: "back" },
   ];
   const totalSpreads = Math.ceil(leaves.length / 2);
@@ -2195,9 +2229,10 @@ el("#binder-add-page-btn").addEventListener("click", () => {
   const myBinderObj = findMyBinder(currentMyBinderId);
   if (!myBinderObj) return;
   addPageToBinder(myBinderObj);
-  // Jump to the spread containing the newly added last page.
-  const leafCount = myBinderObj.pages.length + 2;
-  currentSpreadIndex = Math.ceil(leafCount / 2) - 1;
+  // Jump to the spread showing the new page's front face.
+  const newPageIndex = myBinderObj.pages.length - 1;
+  const frontLeafIndex = 1 + newPageIndex * 2;
+  currentSpreadIndex = Math.floor(frontLeafIndex / 2);
   renderBinderDetail();
 });
 
