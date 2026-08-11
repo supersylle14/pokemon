@@ -197,7 +197,7 @@ button { font-family: var(--font-body); cursor: pointer; }
 
 .card-tile:hover { transform: translateY(-2px); border-color: var(--holo); }
 
-.card-thumb-btn { background: none; border: none; padding: 0; display: block; width: 100%; }
+.card-thumb-btn { background: none; border: none; padding: 0; display: block; width: 100%; position: relative; }
 
 .card-thumb-wrap {
   position: relative;
@@ -229,38 +229,41 @@ button { font-family: var(--font-body); cursor: pointer; }
   background: var(--ink-panel-raised);
 }
 
-/* Holo shimmer — only applied when the API says this print has a holo finish */
-.card-tile[data-holo="true"] .card-thumb-wrap,
-.card-thumb-wrap[data-holo-dialog] {
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.10), 0 0 16px rgba(124,140,224,0.30);
-  position: relative;
-  overflow: hidden;
-  border-radius: 8px;
-}
-
-.card-tile[data-holo="true"] .card-thumb-wrap::after,
-.card-thumb-wrap[data-holo-dialog]::after {
-  content: "";
+/* Holo sparkles — a few small twinkling sparks in the corner, only shown
+   when the API says this print has a holo finish. Sits outside the
+   overflow-hidden thumb wrap so sparks can peek slightly past the edge. */
+.holo-sparkle-group {
+  display: none;
   position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    115deg,
-    transparent 15%,
-    rgba(255,80,170,0.38) 30%,
-    rgba(255,210,90,0.38) 42%,
-    rgba(90,220,255,0.38) 54%,
-    rgba(160,100,255,0.38) 66%,
-    transparent 82%
-  );
-  background-size: 250% 250%;
-  mix-blend-mode: color-dodge;
-  animation: holo-sheen 3.4s linear infinite;
+  top: 0;
+  right: 0;
+  width: 40px;
+  height: 40px;
   pointer-events: none;
 }
 
-@keyframes holo-sheen {
-  0%   { background-position: 0% 0%; }
-  100% { background-position: 200% 200%; }
+.card-tile[data-holo="true"] .holo-sparkle-group,
+.dialog-thumb-btn[data-holo-dialog] .holo-sparkle-group {
+  display: block;
+}
+
+.spark {
+  position: absolute;
+  color: var(--gold);
+  filter: drop-shadow(0 0 2px rgba(255,255,255,0.8));
+  opacity: 0;
+  animation: spark-twinkle ease-in-out infinite;
+}
+
+.spark svg { display: block; width: 100%; height: 100%; }
+
+.spark-a { top: -4px;  right: 5px;  width: 18px; height: 18px; animation-duration: 2.4s; animation-delay: 0s; }
+.spark-b { top: 11px;  right: -4px; width: 11px; height: 11px; animation-duration: 2.1s; animation-delay: 0.7s; }
+.spark-c { top: 3px;   right: 17px; width: 8px;  height: 8px;  animation-duration: 1.9s; animation-delay: 1.3s; color: var(--holo); }
+
+@keyframes spark-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); }
+  50%      { opacity: 1; transform: scale(1) rotate(12deg); }
 }
 
 .holo-badge {
@@ -271,9 +274,7 @@ button { font-family: var(--font-body); cursor: pointer; }
   font-weight: 700;
   letter-spacing: 0.4px;
   color: #241a00;
-  background: linear-gradient(90deg, #ff8fd0, #ffe08a, #8fe3ff, #c39bff);
-  background-size: 300% 300%;
-  animation: holo-sheen 5s linear infinite;
+  background: var(--gold);
   padding: 2px 8px;
   border-radius: 999px;
   margin: 2px 0 0;
@@ -351,10 +352,10 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 
 @media (prefers-reduced-motion: reduce) {
   .card-tile { transition: none; }
-  .card-tile[data-holo="true"] .card-thumb-wrap::after,
-  .holo-badge {
+  .spark {
     animation: none;
-    background-position: 35% 35%;
+    opacity: 0.85;
+    transform: scale(0.85) rotate(0deg);
   }
 }
 </style>
@@ -440,6 +441,11 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
     <button type="button" class="card-thumb-btn">
       <div class="card-thumb-wrap">
         <img class="card-thumb" loading="lazy" alt="">
+      </div>
+      <div class="holo-sparkle-group" aria-hidden="true">
+        <span class="spark spark-a"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c.4 3.6 1.1 6.1 2.1 7.4 1.3 1.7 3.6 2.5 6.9 2.6-3.3.1-5.6.9-6.9 2.6-1 1.3-1.7 3.8-2.1 7.4-.4-3.6-1.1-6.1-2.1-7.4C8.6 11.5 6.3 10.7 3 10.6c3.3-.1 5.6-.9 6.9-2.6C10.9 6.7 11.6 4.2 12 0z"/></svg></span>
+        <span class="spark spark-b"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c.4 3.6 1.1 6.1 2.1 7.4 1.3 1.7 3.6 2.5 6.9 2.6-3.3.1-5.6.9-6.9 2.6-1 1.3-1.7 3.8-2.1 7.4-.4-3.6-1.1-6.1-2.1-7.4C8.6 11.5 6.3 10.7 3 10.6c3.3-.1 5.6-.9 6.9-2.6C10.9 6.7 11.6 4.2 12 0z"/></svg></span>
+        <span class="spark spark-c"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c.4 3.6 1.1 6.1 2.1 7.4 1.3 1.7 3.6 2.5 6.9 2.6-3.3.1-5.6.9-6.9 2.6-1 1.3-1.7 3.8-2.1 7.4-.4-3.6-1.1-6.1-2.1-7.4C8.6 11.5 6.3 10.7 3 10.6c3.3-.1 5.6-.9 6.9-2.6C10.9 6.7 11.6 4.2 12 0z"/></svg></span>
       </div>
     </button>
     <div class="card-info">
@@ -753,6 +759,14 @@ function renderBinderCount() {
 
 const dialog = el("#card-dialog");
 
+const SPARK_PATH = 'M12 0c.4 3.6 1.1 6.1 2.1 7.4 1.3 1.7 3.6 2.5 6.9 2.6-3.3.1-5.6.9-6.9 2.6-1 1.3-1.7 3.8-2.1 7.4-.4-3.6-1.1-6.1-2.1-7.4C8.6 11.5 6.3 10.7 3 10.6c3.3-.1 5.6-.9 6.9-2.6C10.9 6.7 11.6 4.2 12 0z';
+const SPARKLE_GROUP_HTML = `
+  <div class="holo-sparkle-group" aria-hidden="true">
+    <span class="spark spark-a"><svg viewBox="0 0 24 24" fill="currentColor"><path d="${SPARK_PATH}"/></svg></span>
+    <span class="spark spark-b"><svg viewBox="0 0 24 24" fill="currentColor"><path d="${SPARK_PATH}"/></svg></span>
+    <span class="spark spark-c"><svg viewBox="0 0 24 24" fill="currentColor"><path d="${SPARK_PATH}"/></svg></span>
+  </div>`;
+
 async function openCardDialog(cardId) {
   const content = el("#card-dialog-content");
   content.innerHTML = "<p>Loading…</p>";
@@ -764,8 +778,11 @@ async function openCardDialog(cardId) {
       .join(" · ");
     const holo = card.variants && card.variants.holo;
     content.innerHTML = `
-      <div class="card-thumb-wrap" style="max-width:260px;align-self:center;aspect-ratio:5/7;"${holo ? ' data-holo-dialog' : ""}>
-        <img class="dialog-img" alt="${card.name}" style="width:100%;height:100%;object-fit:contain;">
+      <div class="dialog-thumb-btn"${holo ? " data-holo-dialog" : ""} style="max-width:260px;align-self:center;position:relative;">
+        <div class="card-thumb-wrap" style="aspect-ratio:5/7;">
+          <img class="dialog-img" alt="${card.name}" style="width:100%;height:100%;object-fit:contain;">
+        </div>
+        ${holo ? SPARKLE_GROUP_HTML : ""}
       </div>
       <h2>${card.name}${holo ? ' <span class="holo-badge" style="vertical-align:middle;">✦ Holo</span>' : ""}</h2>
       <p class="dialog-meta">${meta}</p>
