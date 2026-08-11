@@ -367,6 +367,22 @@ button { font-family: var(--font-body); cursor: pointer; }
   color: var(--paper);
 }
 
+.thumb-search-link {
+  display: inline-block;
+  border: 1px solid rgba(232,178,61,0.35);
+  color: var(--gold);
+  font-family: var(--font-body);
+  font-size: 11px;
+  text-decoration: none;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.thumb-search-link:hover {
+  border-color: var(--gold);
+  background: rgba(232,178,61,0.1);
+}
+
 /* Holo sparkles — a few small twinkling sparks in the corner, only shown
    when the API says this print has a holo finish. Sits outside the
    overflow-hidden thumb wrap so sparks can peek slightly past the edge. */
@@ -1391,10 +1407,10 @@ function imageCandidates(imageBase) {
   ];
 }
 
-function setupImage(imgEl, imageBase, name) {
+function setupImage(imgEl, imageBase, name, setName) {
   const candidates = imageCandidates(imageBase);
   if (!candidates.length) {
-    showImagePlaceholder(imgEl, name, null); // no URL at all — nothing to retry
+    showImagePlaceholder(imgEl, name, null, setName); // no URL at all — nothing to retry
     return;
   }
 
@@ -1402,7 +1418,7 @@ function setupImage(imgEl, imageBase, name) {
 
   const attempt = () => {
     if (idx >= candidates.length) {
-      showImagePlaceholder(imgEl, name, () => setupImage(imgEl, imageBase, name));
+      showImagePlaceholder(imgEl, name, () => setupImage(imgEl, imageBase, name, setName), setName);
       return;
     }
     imgEl.src = candidates[idx];
@@ -1419,10 +1435,20 @@ function setupImage(imgEl, imageBase, name) {
   attempt();
 }
 
-function showImagePlaceholder(imgEl, name, retry) {
+function imageSearchUrl(name, setName) {
+  const query = setName ? `${name} ${setName} pokemon card` : `${name} pokemon card`;
+  return `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`;
+}
+
+function showImagePlaceholder(imgEl, name, retry, setName) {
   imgEl.onerror = null;
   imgEl.style.display = "none";
-  const wrap = imgEl.closest(".card-thumb-wrap");
+  // Use the image's own parent rather than requiring a specific ".card-thumb-wrap"
+  // ancestor — that class only exists in some contexts (search tiles, the
+  // dialog). Binder slots and pile cards hold their <img> directly, so
+  // looking for that specific class silently found nothing there and no
+  // placeholder ever appeared for a missing-image card placed in a binder.
+  const wrap = imgEl.parentElement;
   if (!wrap) return;
 
   let ph = wrap.querySelector(".card-thumb-placeholder");
@@ -1436,6 +1462,19 @@ function showImagePlaceholder(imgEl, name, retry) {
   const label = document.createElement("span");
   label.textContent = name || "No image";
   ph.appendChild(label);
+
+  // TCGdex is community-sourced and some sets — older or niche ones like
+  // Skyridge — still have real gaps in image coverage. Since we can't
+  // conjure an image that doesn't exist in the database, at least make it
+  // one click to go look the card up elsewhere.
+  const searchLink = document.createElement("a");
+  searchLink.className = "thumb-search-link";
+  searchLink.href = imageSearchUrl(name, setName);
+  searchLink.target = "_blank";
+  searchLink.rel = "noopener";
+  searchLink.textContent = "🔍 Search image";
+  searchLink.addEventListener("click", (e) => e.stopPropagation());
+  ph.appendChild(searchLink);
 
   if (retry) {
     const retryBtn = document.createElement("button");
@@ -1458,7 +1497,7 @@ function showImagePlaceholder(imgEl, name, retry) {
 
 const tileTemplate = el("#card-tile-template");
 
-function buildTile({ id, name, image, metaText, type, holo, savedState }) {
+function buildTile({ id, name, image, metaText, type, holo, setName, savedState }) {
   const node = tileTemplate.content.firstElementChild.cloneNode(true);
   node.dataset.cardId = id;
   if (type) node.dataset.type = type;
@@ -1466,7 +1505,7 @@ function buildTile({ id, name, image, metaText, type, holo, savedState }) {
 
   const img = el(".card-thumb", node);
   img.alt = name;
-  setupImage(img, image, name);
+  setupImage(img, image, name, setName);
 
   // .card-thumb-btn is a div (not a real <button>) so a retry <button> can
   // legally live inside its placeholder without illegal button-in-button
@@ -1635,6 +1674,7 @@ function renderBinder(filterText = "") {
         metaText: metaBits,
         type: card.primaryType,
         holo: card.holo,
+        setName: card.setName,
         savedState: "remove",
       });
 
@@ -1702,7 +1742,7 @@ async function openCardDialog(cardId, actionConfig) {
       <h2>${card.name}${holo ? ' <span class="holo-badge" style="vertical-align:middle;">✦ Holo</span>' : ""}</h2>
       <p class="dialog-meta">${meta}</p>
     `;
-    setupImage(el(".dialog-img", content), card.image, card.name);
+    setupImage(el(".dialog-img", content), card.image, card.name, card.set?.name);
 
     // Some callers (e.g. the binder pile) want a context-specific destructive
     // action available right here in the detail view, rather than forcing
@@ -1993,7 +2033,7 @@ function renderPageFace(leaf, myBinderObj) {
 
       const img = document.createElement("img");
       img.alt = slotCard.name;
-      setupImage(img, slotCard.image, slotCard.name);
+      setupImage(img, slotCard.image, slotCard.name, slotCard.setName);
       slot.appendChild(img);
 
       const removeBtn = document.createElement("button");
@@ -2087,7 +2127,7 @@ function renderPile(myBinderObj) {
 
     const img = document.createElement("img");
     img.alt = card.name;
-    setupImage(img, card.image, card.name);
+    setupImage(img, card.image, card.name, card.setName);
     item.appendChild(img);
 
     const viewBtn = document.createElement("button");
