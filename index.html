@@ -574,7 +574,66 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
   min-width: 140px;
 }
 
-.binder-detail-meta { color: var(--paper-dim); font-size: 13px; margin: 4px 0 20px; }
+.binder-detail-meta { color: var(--paper-dim); font-size: 13px; margin: 4px 0 18px; }
+
+/* ===== Pile — cards waiting to be placed ===== */
+
+.binder-pile-section { margin-bottom: 16px; }
+
+.binder-pile-label {
+  color: var(--paper-dim);
+  font-size: 12.5px;
+  margin: 0 0 8px;
+}
+
+.binder-pile {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 74px;
+  padding: 10px;
+  background: var(--ink-panel);
+  border: 1px dashed var(--line-soft);
+  border-radius: var(--radius);
+}
+
+.binder-pile.drag-over { border-color: var(--holo); background: rgba(124,140,224,0.08); }
+
+.binder-pile-empty-hint { color: var(--paper-dim); font-size: 12.5px; margin: 8px 2px 0; }
+
+.binder-pile-card {
+  position: relative;
+  width: 52px;
+  aspect-ratio: 5 / 7;
+  border-radius: 5px;
+  overflow: hidden;
+  background: var(--ink);
+  border: 1px solid var(--line-soft);
+  cursor: grab;
+}
+
+.binder-pile-card img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.binder-pile-card.rearrange-selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232,178,61,0.4); }
+
+/* ===== Rearrange banner — shown while a card is picked up ===== */
+
+.rearrange-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: rgba(124,140,224,0.12);
+  border: 1px solid var(--holo);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 13.5px;
+}
+
+.rearrange-banner-actions { display: flex; gap: 8px; }
+
+/* ===== Page navigation ===== */
 
 .binder-page-nav {
   display: flex;
@@ -600,11 +659,49 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
   margin-top: 20px;
 }
 
+/* ===== Spread — two faces side by side, like an open binder ===== */
+
+.binder-spread {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+  position: relative;
+}
+
+.binder-face {
+  flex: 1 1 320px;
+  min-width: 240px;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.binder-face:first-child { align-items: flex-end; }
+.binder-face:last-child { align-items: flex-start; }
+.binder-spread.single-face .binder-face { align-items: center; }
+
+/* The fold down the middle of the open binder. */
+.binder-spread::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, var(--line-soft) 15%, var(--line-soft) 85%, transparent);
+  transform: translateX(-50%);
+}
+
+.binder-face-toolbar { font-size: 11.5px; }
+.binder-face-toolbar .ghost-btn { padding: 5px 10px; font-size: 11.5px; }
+
 /* Front/back covers — plain panels bookending the real pages, like the
    inside of a physical binder's cover. */
 .binder-cover {
-  max-width: 420px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 380px;
   aspect-ratio: 4 / 5;
   border-radius: 14px;
   background: linear-gradient(145deg, var(--ink-panel-raised), var(--ink-panel));
@@ -650,9 +747,9 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 
 .binder-slot-grid {
   display: grid;
-  gap: 10px;
-  max-width: 720px;
-  margin: 0 auto;
+  gap: 8px;
+  width: 100%;
+  max-width: 380px;
 }
 
 .binder-slot {
@@ -666,6 +763,8 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 
 .binder-slot.filled { border-style: solid; cursor: pointer; }
 .binder-slot.filled:hover { border-color: var(--holo); }
+.binder-slot.drag-over { border-color: var(--gold); background: rgba(232,178,61,0.08); }
+.binder-slot.rearrange-selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232,178,61,0.4); }
 
 .binder-slot img { width: 100%; height: 100%; object-fit: contain; display: block; }
 
@@ -693,6 +792,12 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 
 .binder-slot-remove:hover { background: var(--danger); }
 #card-dialog-close { width: 100%; }
+
+@media (max-width: 720px) {
+  .binder-spread::before { display: none; }
+  .binder-face:first-child, .binder-face:last-child { align-items: center; }
+}
+
 
 .app-footer {
   margin-top: 48px;
@@ -813,17 +918,32 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
       </div>
       <p class="binder-detail-meta" id="binder-detail-meta"></p>
 
-      <div class="binder-page-nav">
-        <button type="button" id="binder-prev-btn" class="ghost-btn" aria-label="Previous page">‹ Prev</button>
-        <span class="binder-page-label" id="binder-page-label"></span>
-        <button type="button" id="binder-next-btn" class="ghost-btn" aria-label="Next page">Next ›</button>
+      <!-- Cards added from Find Cards land here first — drag (or tap, then
+           tap a slot) to place them onto a page. -->
+      <div class="binder-pile-section">
+        <p class="binder-pile-label">Pile — drag onto a page, or tap a card then tap a slot</p>
+        <div class="binder-pile" id="binder-pile"></div>
+        <p class="binder-pile-empty-hint" id="binder-pile-empty-hint" hidden>Nothing waiting to be placed. Add cards from <strong>Find cards</strong>.</p>
       </div>
 
-      <div id="binder-page-content"></div>
+      <div class="rearrange-banner" id="rearrange-banner" hidden>
+        <span id="rearrange-banner-text"></span>
+        <div class="rearrange-banner-actions">
+          <button type="button" id="rearrange-return-btn" class="ghost-btn" hidden>↩ Return to pile</button>
+          <button type="button" id="rearrange-cancel-btn" class="ghost-btn">Cancel</button>
+        </div>
+      </div>
+
+      <div class="binder-page-nav">
+        <button type="button" id="binder-prev-btn" class="ghost-btn" aria-label="Previous spread">‹ Prev</button>
+        <span class="binder-page-label" id="binder-page-label"></span>
+        <button type="button" id="binder-next-btn" class="ghost-btn" aria-label="Next spread">Next ›</button>
+      </div>
+
+      <div class="binder-spread" id="binder-spread"></div>
 
       <div class="binder-page-toolbar">
         <button type="button" id="binder-add-page-btn" class="ghost-btn">+ Add page</button>
-        <button type="button" id="binder-remove-page-btn" class="ghost-btn danger">Remove this page</button>
       </div>
     </div>
   </section>
@@ -979,7 +1099,10 @@ const STORAGE_KEY_MYBINDERS = "card-binder:my-binders:v1";
 function loadMyBinders() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_MYBINDERS);
-    return raw ? JSON.parse(raw) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    // Normalize older saves that predate the "pile" field.
+    parsed.forEach((b) => { if (!Array.isArray(b.pile)) b.pile = []; });
+    return parsed;
   } catch {
     return [];
   }
@@ -1002,6 +1125,7 @@ function createMyBinder(name, cols, rows) {
     cols,
     rows,
     pages: [new Array(cols * rows).fill(null)],
+    pile: [],
     createdAt: Date.now(),
   };
   myBinders.push(newBinder);
@@ -1022,51 +1146,95 @@ function addPageToBinder(myBinderObj) {
 }
 
 function removePageFromBinder(myBinderObj, pageIndex) {
+  // Cards on a removed page go back to the pile rather than being deleted —
+  // removing a page should never destroy a card, just un-place it.
+  const page = myBinderObj.pages[pageIndex] || [];
+  page.forEach((card) => { if (card) myBinderObj.pile.push(card); });
   myBinderObj.pages.splice(pageIndex, 1);
   saveMyBinders();
 }
 
-// Auto-fill: drop the card into the first empty slot across existing pages;
-// if every page is full, a new page is added automatically so adding a card
-// never fails or silently gets lost.
-function placeCardInBinder(myBinderId, card) {
+// Cards land in the pile when added from Find Cards — the person then drags
+// (or taps) them onto a specific slot themselves, rather than the app
+// guessing where they should go.
+function addCardToPile(myBinderId, card) {
   const myBinderObj = findMyBinder(myBinderId);
   if (!myBinderObj) return;
-  const slim = slimCard(card);
-
-  for (const page of myBinderObj.pages) {
-    const emptyIdx = page.findIndex((slot) => slot === null);
-    if (emptyIdx !== -1) {
-      page[emptyIdx] = slim;
-      saveMyBinders();
-      renderBindersTabCount();
-      return;
-    }
-  }
-
-  const newPage = new Array(myBinderObj.cols * myBinderObj.rows).fill(null);
-  newPage[0] = slim;
-  myBinderObj.pages.push(newPage);
+  myBinderObj.pile.push(slimCard(card));
   saveMyBinders();
   renderBindersTabCount();
 }
 
-function removeCardFromSlot(myBinderId, pageIndex, slotIndex) {
-  const myBinderObj = findMyBinder(myBinderId);
-  if (!myBinderObj || !myBinderObj.pages[pageIndex]) return;
-  myBinderObj.pages[pageIndex][slotIndex] = null;
-  saveMyBinders();
-  renderBindersTabCount();
-}
-
-function binderFillCount(myBinderObj) {
-  let filled = 0;
+function binderStats(myBinderObj) {
+  let placed = 0;
   let total = 0;
   myBinderObj.pages.forEach((page) => {
     total += page.length;
-    filled += page.filter((slot) => slot !== null).length;
+    placed += page.filter((slot) => slot !== null).length;
   });
-  return { filled, total };
+  return { placed, total, pileCount: myBinderObj.pile.length };
+}
+
+// A "location" describes where a card currently is (or is going):
+//   { type: "pile" }                              — the unplaced pile
+//   { type: "pile", pileIndex: n }                 — a specific pile card
+//   { type: "slot", pageIndex: n, slotIndex: n }   — a specific page slot
+//
+// moveCard handles every combination: placing a pile card into an empty
+// slot, swapping two placed cards, swapping a pile card into an occupied
+// slot (bumping the occupant back to the pile), and moving a placed card
+// back to the pile.
+function moveCard(myBinderObj, from, to) {
+  if (!from || !to) return;
+
+  const getCard = (loc) => {
+    if (loc.type === "pile") return typeof loc.pileIndex === "number" ? myBinderObj.pile[loc.pileIndex] : null;
+    return myBinderObj.pages[loc.pageIndex]?.[loc.slotIndex] ?? null;
+  };
+  const clearCard = (loc) => {
+    if (loc.type === "pile") {
+      if (typeof loc.pileIndex === "number") myBinderObj.pile.splice(loc.pileIndex, 1);
+    } else {
+      myBinderObj.pages[loc.pageIndex][loc.slotIndex] = null;
+    }
+  };
+  const setCard = (loc, card) => {
+    if (loc.type === "pile") {
+      myBinderObj.pile.push(card);
+    } else {
+      myBinderObj.pages[loc.pageIndex][loc.slotIndex] = card;
+    }
+  };
+
+  if (from.type === "slot" && to.type === "slot" && from.pageIndex === to.pageIndex && from.slotIndex === to.slotIndex) {
+    return; // dropped back where it started
+  }
+
+  const movingCard = getCard(from);
+  if (!movingCard) return;
+
+  if (to.type === "pile") {
+    clearCard(from);
+    setCard(to, movingCard);
+    saveMyBinders();
+    return;
+  }
+
+  // Destination is a specific slot.
+  const displacedCard = getCard(to);
+  clearCard(from);
+  myBinderObj.pages[to.pageIndex][to.slotIndex] = movingCard;
+  if (displacedCard) {
+    // The slot was occupied — its card goes wherever the moving card came
+    // from (a true swap for slot<->slot, or back into the pile if the
+    // moving card came from the pile).
+    if (from.type === "slot") {
+      myBinderObj.pages[from.pageIndex][from.slotIndex] = displacedCard;
+    } else {
+      myBinderObj.pile.push(displacedCard);
+    }
+  }
+  saveMyBinders();
 }
 
 function renderBindersTabCount() {
@@ -1553,8 +1721,9 @@ el("#search-input").addEventListener("input", (e) => {
 // ---------------------------------------------------------------
 
 let currentMyBinderId = null;
-// 0 = front cover, 1..pages.length = content pages, pages.length+1 = back cover
-let currentPageIndex = 0;
+// Index into the "spreads" (pairs of visible faces) — 0 is the first
+// spread (front cover + page 1), and it increments one spread at a time.
+let currentSpreadIndex = 0;
 
 function renderBindersOverview() {
   el("#binders-detail-view").hidden = true;
@@ -1577,7 +1746,7 @@ function renderBindersOverview() {
     .slice()
     .sort((a, b) => b.createdAt - a.createdAt)
     .forEach((myBinderObj) => {
-      const { filled, total } = binderFillCount(myBinderObj);
+      const { placed, total, pileCount } = binderStats(myBinderObj);
       const card = document.createElement("div");
       card.className = "binder-card";
       card.innerHTML = `
@@ -1591,7 +1760,7 @@ function renderBindersOverview() {
       `;
       el(".binder-card-name", card).textContent = myBinderObj.name;
       el(".binder-card-meta", card).textContent =
-        `${myBinderObj.cols}×${myBinderObj.rows} · ${myBinderObj.pages.length} page${myBinderObj.pages.length === 1 ? "" : "s"} · ${filled}/${total} filled`;
+        `${myBinderObj.cols}×${myBinderObj.rows} · ${myBinderObj.pages.length} page${myBinderObj.pages.length === 1 ? "" : "s"} · ${placed}/${total} placed${pileCount ? ` · ${pileCount} in pile` : ""}`;
 
       el(".open-btn", card).addEventListener("click", () => openMyBinder(myBinderObj.id));
       el(".delete-btn", card).addEventListener("click", () => {
@@ -1607,10 +1776,217 @@ function renderBindersOverview() {
 
 function openMyBinder(id) {
   currentMyBinderId = id;
-  currentPageIndex = 0;
+  currentSpreadIndex = 0;
+  selectedSource = null;
   el("#binders-overview-view").hidden = true;
   el("#binders-detail-view").hidden = false;
   renderBinderDetail();
+}
+
+// ---------------------------------------------------------------
+// Rearrange state — shared between drag-and-drop and the tap-to-select
+// fallback (so the same underlying move logic serves both). During a native
+// drag we deliberately do NOT re-render (replacing the DOM mid-drag would
+// abort the browser's drag gesture) — selectedSource is just set directly.
+// The tap-to-select flow re-renders freely since there's no live drag.
+// ---------------------------------------------------------------
+
+let selectedSource = null;
+let selectedSourceLabel = "";
+
+function isSameLocation(a, b) {
+  if (!a || !b) return false;
+  if (a.type !== b.type) return false;
+  if (a.type === "pile") return a.pileIndex === b.pileIndex;
+  return a.pageIndex === b.pageIndex && a.slotIndex === b.slotIndex;
+}
+
+function selectSource(loc, label) {
+  if (isSameLocation(selectedSource, loc)) {
+    clearSelection();
+    return;
+  }
+  selectedSource = loc;
+  selectedSourceLabel = label;
+  renderBinderDetail();
+}
+
+function clearSelection() {
+  selectedSource = null;
+  selectedSourceLabel = "";
+  renderBinderDetail();
+}
+
+function completeMoveTo(loc) {
+  const myBinderObj = findMyBinder(currentMyBinderId);
+  if (!myBinderObj || !selectedSource) return;
+  moveCard(myBinderObj, selectedSource, loc);
+  selectedSource = null;
+  selectedSourceLabel = "";
+  renderBinderDetail();
+}
+
+function faceLabel(leaf, myBinderObj) {
+  if (leaf.kind === "cover") return leaf.side === "front" ? "Front cover" : "Back cover";
+  return `Page ${leaf.pageIndex + 1} of ${myBinderObj.pages.length}`;
+}
+
+function renderCoverFace(leaf, myBinderObj) {
+  const face = document.createElement("div");
+  face.className = "binder-face";
+  const isFront = leaf.side === "front";
+  const cover = document.createElement("div");
+  cover.className = "binder-cover";
+  cover.innerHTML = `
+    <span class="binder-cover-label">${isFront ? "Front cover" : "Back cover"}</span>
+    <p class="binder-cover-name"></p>
+    <span class="binder-cover-sub"></span>
+  `;
+  el(".binder-cover-name", cover).textContent = myBinderObj.name;
+  el(".binder-cover-sub", cover).textContent =
+    `${myBinderObj.pages.length} page${myBinderObj.pages.length === 1 ? "" : "s"} · ${myBinderObj.cols}×${myBinderObj.rows}`;
+  face.appendChild(cover);
+  return face;
+}
+
+function renderPageFace(leaf, myBinderObj) {
+  const face = document.createElement("div");
+  face.className = "binder-face";
+  const pageIdx = leaf.pageIndex;
+  const page = myBinderObj.pages[pageIdx];
+
+  const slotGrid = document.createElement("div");
+  slotGrid.className = "binder-slot-grid";
+  slotGrid.style.gridTemplateColumns = `repeat(${myBinderObj.cols}, 1fr)`;
+
+  page.forEach((slotCard, slotIdx) => {
+    const loc = { type: "slot", pageIndex: pageIdx, slotIndex: slotIdx };
+    const slot = document.createElement("div");
+    slot.className = "binder-slot";
+
+    if (slotCard) {
+      slot.classList.add("filled");
+      if (slotCard.holo) slot.dataset.holo = "true";
+      slot.draggable = true;
+      if (isSameLocation(selectedSource, loc)) slot.classList.add("rearrange-selected");
+
+      const img = document.createElement("img");
+      img.alt = slotCard.name;
+      setupImage(img, slotCard.image, slotCard.name);
+      slot.appendChild(img);
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "binder-slot-remove";
+      removeBtn.title = `Remove ${slotCard.name}`;
+      removeBtn.textContent = "×";
+      removeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        moveCard(myBinderObj, loc, { type: "pile" });
+        renderBinderDetail();
+      });
+      slot.appendChild(removeBtn);
+
+      slot.addEventListener("dragstart", (e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", "card");
+        selectedSource = loc; // no render — would abort the drag gesture
+      });
+      slot.addEventListener("dragend", clearSelection);
+
+      slot.addEventListener("click", () => {
+        if (selectedSource) completeMoveTo(loc);
+        else openCardDialog(slotCard.id);
+      });
+    } else {
+      slot.addEventListener("click", () => {
+        if (selectedSource) completeMoveTo(loc);
+      });
+    }
+
+    slot.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      slot.classList.add("drag-over");
+    });
+    slot.addEventListener("dragleave", () => slot.classList.remove("drag-over"));
+    slot.addEventListener("drop", (e) => {
+      e.preventDefault();
+      slot.classList.remove("drag-over");
+      completeMoveTo(loc);
+    });
+
+    slotGrid.appendChild(slot);
+  });
+
+  face.appendChild(slotGrid);
+
+  const faceToolbar = document.createElement("div");
+  faceToolbar.className = "binder-face-toolbar";
+  const removePageBtn = document.createElement("button");
+  removePageBtn.type = "button";
+  removePageBtn.className = "ghost-btn danger";
+  removePageBtn.textContent = "Remove this page";
+  removePageBtn.addEventListener("click", () => {
+    const hasCards = page.some((s) => s !== null);
+    const warning = hasCards
+      ? "This page has cards on it. Remove it anyway? They'll go back to the pile."
+      : "Remove this page?";
+    if (!confirm(warning)) return;
+    removePageFromBinder(myBinderObj, pageIdx);
+    if (myBinderObj.pages.length === 0) addPageToBinder(myBinderObj); // always keep at least one page
+    renderBinderDetail();
+  });
+  faceToolbar.appendChild(removePageBtn);
+  face.appendChild(faceToolbar);
+
+  return face;
+}
+
+function renderPile(myBinderObj) {
+  const pile = el("#binder-pile");
+  const emptyHint = el("#binder-pile-empty-hint");
+  pile.innerHTML = "";
+  emptyHint.hidden = myBinderObj.pile.length > 0;
+
+  myBinderObj.pile.forEach((card, pileIdx) => {
+    const loc = { type: "pile", pileIndex: pileIdx };
+    const item = document.createElement("div");
+    item.className = "binder-pile-card";
+    if (card.holo) item.dataset.holo = "true";
+    if (isSameLocation(selectedSource, loc)) item.classList.add("rearrange-selected");
+    item.draggable = true;
+    item.title = card.name;
+
+    const img = document.createElement("img");
+    img.alt = card.name;
+    setupImage(img, card.image, card.name);
+    item.appendChild(img);
+
+    item.addEventListener("dragstart", (e) => {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", "card");
+      selectedSource = loc;
+    });
+    item.addEventListener("dragend", clearSelection);
+
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      selectSource(loc, card.name);
+    });
+
+    pile.appendChild(item);
+  });
+}
+
+function renderRearrangeBanner() {
+  const banner = el("#rearrange-banner");
+  if (!selectedSource) {
+    banner.hidden = true;
+    return;
+  }
+  banner.hidden = false;
+  el("#rearrange-banner-text").textContent = `Placing: ${selectedSourceLabel} — tap a slot to place it`;
+  el("#rearrange-return-btn").hidden = selectedSource.type !== "slot";
 }
 
 function renderBinderDetail() {
@@ -1620,77 +1996,49 @@ function renderBinderDetail() {
     return;
   }
 
-  const lastIndex = myBinderObj.pages.length + 1; // index of the back cover
-  currentPageIndex = Math.max(0, Math.min(currentPageIndex, lastIndex));
-
   el("#binder-detail-name").textContent = myBinderObj.name;
-  const { filled, total } = binderFillCount(myBinderObj);
+  const { placed, total, pileCount } = binderStats(myBinderObj);
   el("#binder-detail-meta").textContent =
-    `${myBinderObj.cols}×${myBinderObj.rows} per page · ${filled}/${total} cards filled`;
+    `${myBinderObj.cols}×${myBinderObj.rows} per page · ${placed}/${total} placed · ${pileCount} in pile`;
 
-  const content = el("#binder-page-content");
-  content.innerHTML = "";
+  renderPile(myBinderObj);
+  renderRearrangeBanner();
 
-  const isFrontCover = currentPageIndex === 0;
-  const isBackCover = currentPageIndex === lastIndex;
+  // Leaves = every visible face in order: front cover, each content page,
+  // back cover. Spreads pair them up two at a time, so opening the binder
+  // shows [cover, page 1], then [page 2, page 3], ... ending on
+  // [last page, back cover] — like actually holding it open.
+  const leaves = [
+    { kind: "cover", side: "front" },
+    ...myBinderObj.pages.map((_, i) => ({ kind: "page", pageIndex: i })),
+    { kind: "cover", side: "back" },
+  ];
+  const totalSpreads = Math.ceil(leaves.length / 2);
+  currentSpreadIndex = Math.max(0, Math.min(currentSpreadIndex, totalSpreads - 1));
 
-  if (isFrontCover || isBackCover) {
-    el("#binder-page-label").textContent = isFrontCover ? "Front cover" : "Back cover";
-    const cover = document.createElement("div");
-    cover.className = "binder-cover";
-    cover.innerHTML = `
-      <span class="binder-cover-label">${isFrontCover ? "Front cover" : "Back cover"}</span>
-      <p class="binder-cover-name">${myBinderObj.name}</p>
-      <span class="binder-cover-sub">${myBinderObj.pages.length} page${myBinderObj.pages.length === 1 ? "" : "s"} · ${myBinderObj.cols}×${myBinderObj.rows}</span>
-    `;
-    content.appendChild(cover);
-  } else {
-    const pageIdx = currentPageIndex - 1;
-    el("#binder-page-label").textContent = `Page ${pageIdx + 1} of ${myBinderObj.pages.length}`;
-    const page = myBinderObj.pages[pageIdx];
+  const leafLeft = leaves[currentSpreadIndex * 2];
+  const leafRight = leaves[currentSpreadIndex * 2 + 1];
 
-    const slotGrid = document.createElement("div");
-    slotGrid.className = "binder-slot-grid";
-    slotGrid.style.gridTemplateColumns = `repeat(${myBinderObj.cols}, 1fr)`;
+  const spread = el("#binder-spread");
+  spread.innerHTML = "";
+  spread.classList.toggle("single-face", !leafRight);
 
-    page.forEach((slotCard, slotIdx) => {
-      const slot = document.createElement("div");
-      slot.className = "binder-slot";
-      if (slotCard) {
-        slot.classList.add("filled");
-        if (slotCard.holo) slot.dataset.holo = "true";
+  const renderLeaf = (leaf) => (leaf.kind === "cover" ? renderCoverFace(leaf, myBinderObj) : renderPageFace(leaf, myBinderObj));
+  spread.appendChild(renderLeaf(leafLeft));
+  if (leafRight) spread.appendChild(renderLeaf(leafRight));
 
-        const img = document.createElement("img");
-        img.alt = slotCard.name;
-        setupImage(img, slotCard.image, slotCard.name);
-        slot.appendChild(img);
+  const labels = [faceLabel(leafLeft, myBinderObj)];
+  if (leafRight) labels.push(faceLabel(leafRight, myBinderObj));
+  el("#binder-page-label").textContent = labels.join("  ·  ");
 
-        const removeBtn = document.createElement("button");
-        removeBtn.type = "button";
-        removeBtn.className = "binder-slot-remove";
-        removeBtn.title = `Remove ${slotCard.name}`;
-        removeBtn.textContent = "×";
-        removeBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          removeCardFromSlot(myBinderObj.id, pageIdx, slotIdx);
-          renderBinderDetail();
-        });
-        slot.appendChild(removeBtn);
-
-        slot.addEventListener("click", () => openCardDialog(slotCard.id));
-      }
-      slotGrid.appendChild(slot);
-    });
-
-    content.appendChild(slotGrid);
-  }
-
-  el("#binder-prev-btn").disabled = currentPageIndex === 0;
-  el("#binder-next-btn").disabled = currentPageIndex === lastIndex;
-  el("#binder-remove-page-btn").disabled = isFrontCover || isBackCover;
+  el("#binder-prev-btn").disabled = currentSpreadIndex === 0;
+  el("#binder-next-btn").disabled = currentSpreadIndex === totalSpreads - 1;
 }
 
-el("#binder-back-btn").addEventListener("click", renderBindersOverview);
+el("#binder-back-btn").addEventListener("click", () => {
+  selectedSource = null;
+  renderBindersOverview();
+});
 
 el("#binder-delete-btn").addEventListener("click", () => {
   const myBinderObj = findMyBinder(currentMyBinderId);
@@ -1702,12 +2050,14 @@ el("#binder-delete-btn").addEventListener("click", () => {
 });
 
 el("#binder-prev-btn").addEventListener("click", () => {
-  currentPageIndex -= 1;
+  selectedSource = null;
+  currentSpreadIndex -= 1;
   renderBinderDetail();
 });
 
 el("#binder-next-btn").addEventListener("click", () => {
-  currentPageIndex += 1;
+  selectedSource = null;
+  currentSpreadIndex += 1;
   renderBinderDetail();
 });
 
@@ -1715,25 +2065,34 @@ el("#binder-add-page-btn").addEventListener("click", () => {
   const myBinderObj = findMyBinder(currentMyBinderId);
   if (!myBinderObj) return;
   addPageToBinder(myBinderObj);
-  currentPageIndex = myBinderObj.pages.length; // jump to the newly added page
+  // Jump to the spread containing the newly added last page.
+  const leafCount = myBinderObj.pages.length + 2;
+  currentSpreadIndex = Math.ceil(leafCount / 2) - 1;
   renderBinderDetail();
 });
 
-el("#binder-remove-page-btn").addEventListener("click", () => {
-  const myBinderObj = findMyBinder(currentMyBinderId);
-  if (!myBinderObj) return;
-  const pageIdx = currentPageIndex - 1;
-  const page = myBinderObj.pages[pageIdx];
-  const hasCards = page && page.some((s) => s !== null);
-  const warning = hasCards
-    ? "This page has cards on it. Remove it anyway? The cards in it will be lost."
-    : "Remove this page?";
-  if (!confirm(warning)) return;
-  removePageFromBinder(myBinderObj, pageIdx);
-  if (myBinderObj.pages.length === 0) addPageToBinder(myBinderObj); // always keep at least one page
-  currentPageIndex = Math.min(currentPageIndex, myBinderObj.pages.length);
-  renderBinderDetail();
+el("#rearrange-cancel-btn").addEventListener("click", clearSelection);
+el("#rearrange-return-btn").addEventListener("click", () => completeMoveTo({ type: "pile" }));
+
+// The pile container itself is a drop target (for un-placing a card back
+// into it) — wired once here rather than inside renderPile, since that
+// function reruns on every render and would otherwise stack duplicate
+// listeners on the same persistent container.
+const pileContainer = el("#binder-pile");
+pileContainer.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  pileContainer.classList.add("drag-over");
 });
+pileContainer.addEventListener("dragleave", () => pileContainer.classList.remove("drag-over"));
+pileContainer.addEventListener("drop", (e) => {
+  e.preventDefault();
+  pileContainer.classList.remove("drag-over");
+  completeMoveTo({ type: "pile" });
+});
+pileContainer.addEventListener("click", () => {
+  if (selectedSource) completeMoveTo({ type: "pile" });
+});
+
 
 // ---------------------------------------------------------------
 // My Binders — create-binder dialog
@@ -1810,13 +2169,13 @@ function openChooseBinderDialog() {
   const list = el("#binder-choose-list");
   list.innerHTML = "";
   myBinders.forEach((myBinderObj) => {
-    const { filled, total } = binderFillCount(myBinderObj);
+    const { placed, total } = binderStats(myBinderObj);
     const row = document.createElement("button");
     row.type = "button";
     row.className = "binder-choose-row";
     row.innerHTML = `
       <span>${myBinderObj.name}</span>
-      <span class="binder-choose-sub">${filled}/${total}</span>
+      <span class="binder-choose-sub">${placed}/${total}</span>
     `;
     row.addEventListener("click", () => {
       binderChooseDialog.close();
@@ -1841,17 +2200,18 @@ el("#binder-choose-new-btn").addEventListener("click", async () => {
 });
 
 // The full "add this card to a binder" flow: create-if-none, skip-the-picker-
-// if-only-one, otherwise ask which one. Returns true if the card was placed.
+// if-only-one, otherwise ask which one. The card lands in that binder's
+// pile — placing it onto an actual page slot is a manual drag/tap step.
 async function addCardToBinderFlow(card) {
   if (myBinders.length === 0) {
     const created = await openCreateBinderDialog();
     if (!created) return false;
-    placeCardInBinder(created.id, card);
+    addCardToPile(created.id, card);
     return true;
   }
 
   if (myBinders.length === 1) {
-    placeCardInBinder(myBinders[0].id, card);
+    addCardToPile(myBinders[0].id, card);
     return true;
   }
 
@@ -1861,10 +2221,10 @@ async function addCardToBinderFlow(card) {
     // person clicked "+ New binder" from inside the picker
     const created = await openCreateBinderDialog();
     if (!created) return false;
-    placeCardInBinder(created.id, card);
+    addCardToPile(created.id, card);
     return true;
   }
-  placeCardInBinder(chosen, card);
+  addCardToPile(chosen, card);
   return true;
 }
 
