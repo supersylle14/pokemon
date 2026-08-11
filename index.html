@@ -42,6 +42,11 @@
 
 * { box-sizing: border-box; }
 
+/* Some component rules below set `display` unconditionally (e.g. .holo-badge,
+   .card-grid), which can accidentally override the plain HTML `hidden`
+   attribute. This makes sure `hidden` always wins regardless. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   background: var(--ink);
@@ -502,7 +507,7 @@ function addToBinder(card) {
     rarity: card.rarity || null,
     localId: card.localId || null,
     primaryType: (card.types && card.types[0]) || null,
-    holo: !!(card.variants && card.variants.holo),
+    holo: isHoloCard(card),
     addedAt: Date.now(),
   });
   saveBinder(binder);
@@ -539,7 +544,22 @@ function getFullCard(cardId) {
   return detailCache.get(cardId);
 }
 
-// Not every card has an image (some energy/trainer/promo cards don't), and
+// The `variants.holo` flag from the API means something narrower than you'd
+// think: it flags cards that have a *separate* holo-finish print alongside a
+// plain "normal" print (mostly modern reprints). Classic cards — like a
+// Base Set Charizard — are ONLY ever printed as holo, so the API just marks
+// them "normal": true and never sets holo: true, even though they're fully
+// holographic. The reliable signal is the rarity text itself.
+const HOLO_RARITY_KEYWORDS = [
+  "holo", "rainbow", "secret", "hyper", "radiant", "amazing",
+  "illustration", "full art", "gold", "shiny", "ultra",
+];
+
+function isHoloCard(card) {
+  if (card?.variants?.holo) return true;
+  const rarity = (card?.rarity || "").toLowerCase();
+  return HOLO_RARITY_KEYWORDS.some((kw) => rarity.includes(kw));
+}
 // not every image exists at every quality/format. Try a few options before
 // giving up and showing a text placeholder instead of a broken image icon.
 function imageCandidates(imageBase) {
@@ -636,7 +656,7 @@ async function hydrateTileDetails(tile) {
   const id = tile.dataset.cardId;
   try {
     const full = await getFullCard(id);
-    if (full.variants && full.variants.holo) {
+    if (isHoloCard(full)) {
       tile.dataset.holo = "true";
       const badge = el(".holo-badge", tile);
       if (badge) badge.hidden = false;
@@ -776,7 +796,7 @@ async function openCardDialog(cardId) {
     const meta = [card.set?.name, card.rarity, card.category, card.hp ? `${card.hp} HP` : null]
       .filter(Boolean)
       .join(" · ");
-    const holo = card.variants && card.variants.holo;
+    const holo = isHoloCard(card);
     content.innerHTML = `
       <div class="dialog-thumb-btn"${holo ? " data-holo-dialog" : ""} style="max-width:260px;align-self:center;position:relative;">
         <div class="card-thumb-wrap" style="aspect-ratio:5/7;">
