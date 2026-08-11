@@ -615,6 +615,32 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 .binder-pile-card img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .binder-pile-card.rearrange-selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232,178,61,0.4); }
 
+.binder-pile-view-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 999px;
+  border: none;
+  background: rgba(10,10,14,0.8);
+  color: var(--paper);
+  font-size: 11px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+
+.binder-pile-card:hover .binder-pile-view-btn,
+.binder-pile-card:focus-within .binder-pile-view-btn {
+  display: flex;
+}
+
+.binder-pile-view-btn:hover { background: var(--holo); }
+
 /* ===== Rearrange banner — shown while a card is picked up ===== */
 
 .rearrange-banner {
@@ -815,7 +841,6 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 }
 
 .binder-slot-remove:hover { background: var(--danger); }
-#card-dialog-close { width: 100%; }
 
 @media (max-width: 720px) {
   .binder-spread::before { display: none; }
@@ -985,7 +1010,10 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 <!-- Card detail dialog -->
 <dialog id="card-dialog">
   <div id="card-dialog-content"></div>
-  <button type="button" id="card-dialog-close" class="ghost-btn">Close</button>
+  <div class="dialog-actions">
+    <button type="button" id="card-dialog-action-btn" class="ghost-btn danger" hidden></button>
+    <button type="button" id="card-dialog-close" class="ghost-btn">Close</button>
+  </div>
 </dialog>
 
 <!-- Create binder dialog -->
@@ -1630,9 +1658,11 @@ const SPARKLE_GROUP_HTML = `
     <span class="spark spark-c"><svg viewBox="0 0 24 24" fill="currentColor"><path d="${SPARK_PATH}"/></svg></span>
   </div>`;
 
-async function openCardDialog(cardId) {
+async function openCardDialog(cardId, actionConfig) {
   const content = el("#card-dialog-content");
+  const actionBtn = el("#card-dialog-action-btn");
   content.innerHTML = "<p>Loading…</p>";
+  actionBtn.hidden = true;
   dialog.showModal();
   try {
     const card = await getFullCard(cardId);
@@ -1651,6 +1681,18 @@ async function openCardDialog(cardId) {
       <p class="dialog-meta">${meta}</p>
     `;
     setupImage(el(".dialog-img", content), card.image, card.name);
+
+    // Some callers (e.g. the binder pile) want a context-specific destructive
+    // action available right here in the detail view, rather than forcing
+    // the person back out to find a separate remove control.
+    if (actionConfig) {
+      actionBtn.hidden = false;
+      actionBtn.textContent = actionConfig.label;
+      actionBtn.onclick = () => {
+        dialog.close();
+        actionConfig.onAction();
+      };
+    }
   } catch (err) {
     content.innerHTML = "<p>Couldn't load this card. Try again.</p>";
   }
@@ -2014,6 +2056,20 @@ function renderPile(myBinderObj) {
     setupImage(img, card.image, card.name);
     item.appendChild(img);
 
+    const viewBtn = document.createElement("button");
+    viewBtn.type = "button";
+    viewBtn.className = "binder-pile-view-btn";
+    viewBtn.title = `View ${card.name}`;
+    viewBtn.textContent = "ⓘ";
+    viewBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openCardDialog(card.id, {
+        label: "Remove from pile",
+        onAction: () => removeCardFromPile(myBinderObj.id, pileIdx),
+      });
+    });
+    item.appendChild(viewBtn);
+
     item.addEventListener("dragstart", (e) => {
       e.dataTransfer.effectAllowed = "move";
       e.dataTransfer.setData("text/plain", "card");
@@ -2028,6 +2084,14 @@ function renderPile(myBinderObj) {
 
     pile.appendChild(item);
   });
+}
+
+function removeCardFromPile(myBinderId, pileIndex) {
+  const myBinderObj = findMyBinder(myBinderId);
+  if (!myBinderObj) return;
+  myBinderObj.pile.splice(pileIndex, 1);
+  saveMyBinders();
+  renderBinderDetail();
 }
 
 function renderRearrangeBanner() {
