@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Card Binder — Pokémon TCG want list</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ===== Design tokens ===== */
+:root {
+  --ink: #16171D;
+  --ink-panel: #1E202A;
+  --ink-panel-raised: #262837;
+  --line-soft: #33354533;
+  --paper: #F1EFE7;
+  --paper-dim: #A8A6B0;
+  --gold: #E8B23D;
+  --holo: #7C8CE0;
+  --grass: #4A9F58;
+  --danger: #C25450;
+  --radius: 10px;
+
+  --font-display: "Barlow Condensed", sans-serif;
+  --font-body: "Inter", sans-serif;
+
+  --type-grass: #4A9F58;
+  --type-fire: #E4703A;
+  --type-water: #4A90D9;
+  --type-lightning: #D9B830;
+  --type-psychic: #A165C9;
+  --type-fighting: #B5602F;
+  --type-darkness: #55525F;
+  --type-metal: #9098A5;
+  --type-fairy: #E58FC0;
+  --type-dragon: #6C6CC4;
+  --type-colorless: #B8B4A8;
+  --type-default: #55586b;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-body);
+}
+
+body {
+  min-height: 100vh;
+  background-image:
+    radial-gradient(circle at 15% 0%, rgba(124,140,224,0.10), transparent 45%),
+    radial-gradient(circle at 100% 30%, rgba(232,178,61,0.07), transparent 40%);
+}
+
+a { color: var(--gold); }
+
+button { font-family: var(--font-body); cursor: pointer; }
+
+.app { max-width: 1080px; margin: 0 auto; padding: 32px 20px 60px; }
+
+.app-header { margin-bottom: 28px; }
+
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand-mark { color: var(--gold); font-size: 22px; line-height: 1; }
+
+.app-header h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 40px;
+  letter-spacing: 0.5px;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.tagline { margin: 6px 0 0; color: var(--paper-dim); font-size: 15px; max-width: 46ch; }
+
+.tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line-soft); margin-bottom: 22px; }
+
+.tab {
+  background: none;
+  border: none;
+  color: var(--paper-dim);
+  font-family: var(--font-display);
+  font-size: 18px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  padding: 10px 4px 12px;
+  position: relative;
+  margin-right: 22px;
+}
+
+.tab.active { color: var(--paper); }
+
+.tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 2px;
+  background: var(--gold);
+}
+
+.tab-count {
+  display: inline-block;
+  min-width: 20px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: var(--ink-panel-raised);
+  color: var(--paper);
+  font-size: 12px;
+  font-family: var(--font-body);
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.tab.active .tab-count { background: var(--gold); color: #1a1300; }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+.search-bar { display: flex; gap: 10px; margin-bottom: 8px; }
+
+#search-input, #binder-filter {
+  flex: 1;
+  background: var(--ink-panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  color: var(--paper);
+  font-size: 15px;
+  padding: 12px 14px;
+  outline: none;
+}
+
+#search-input:focus, #binder-filter:focus {
+  border-color: var(--holo);
+  box-shadow: 0 0 0 3px rgba(124,140,224,0.18);
+}
+
+.search-bar button[type="submit"] {
+  background: var(--gold);
+  border: none;
+  color: #1a1300;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  font-size: 15px;
+  padding: 0 22px;
+  border-radius: var(--radius);
+}
+
+.search-bar button[type="submit"]:hover { background: #f0be55; }
+
+.hint { color: var(--paper-dim); font-size: 13px; margin: 0 0 18px; }
+
+.status-line { min-height: 20px; color: var(--paper-dim); font-size: 14px; margin-bottom: 14px; }
+.status-line.error { color: var(--danger); }
+
+.binder-toolbar { display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.binder-toolbar-actions { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.binder-total { color: var(--paper-dim); font-size: 13px; }
+
+.ghost-btn {
+  background: transparent;
+  border: 1px solid var(--line-soft);
+  color: var(--paper);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.ghost-btn:hover { border-color: var(--paper-dim); }
+.ghost-btn.danger { color: var(--danger); border-color: rgba(194,84,80,0.4); }
+.ghost-btn.danger:hover { border-color: var(--danger); }
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+.card-tile {
+  background: var(--ink-panel);
+  border: 1px solid var(--line-soft);
+  border-left: 4px solid var(--type-default);
+  border-radius: var(--radius);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.card-tile:hover { transform: translateY(-2px); border-color: var(--holo); }
+
+.card-thumb-btn { background: none; border: none; padding: 0; display: block; width: 100%; }
+
+.card-thumb {
+  width: 100%;
+  aspect-ratio: 5 / 7;
+  object-fit: contain;
+  border-radius: 6px;
+  background: var(--ink);
+  display: block;
+}
+
+.card-info { flex: 1; min-height: 0; }
+
+.card-name { font-family: var(--font-display); font-weight: 600; font-size: 17px; margin: 0; line-height: 1.15; }
+.card-meta { margin: 3px 0 0; color: var(--paper-dim); font-size: 12.5px; }
+
+.add-btn {
+  background: var(--ink-panel-raised);
+  border: 1px solid var(--line-soft);
+  color: var(--paper);
+  border-radius: 7px;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.add-btn:hover { border-color: var(--gold); color: var(--gold); }
+
+.add-btn.in-list { background: rgba(76,154,106,0.15); border-color: var(--grass); color: var(--grass); }
+.add-btn.remove { background: transparent; }
+.add-btn.remove:hover { border-color: var(--danger); color: var(--danger); }
+
+.card-tile[data-type="Grass"]     { border-left-color: var(--type-grass); }
+.card-tile[data-type="Fire"]      { border-left-color: var(--type-fire); }
+.card-tile[data-type="Water"]     { border-left-color: var(--type-water); }
+.card-tile[data-type="Lightning"] { border-left-color: var(--type-lightning); }
+.card-tile[data-type="Psychic"]   { border-left-color: var(--type-psychic); }
+.card-tile[data-type="Fighting"]  { border-left-color: var(--type-fighting); }
+.card-tile[data-type="Darkness"]  { border-left-color: var(--type-darkness); }
+.card-tile[data-type="Metal"]     { border-left-color: var(--type-metal); }
+.card-tile[data-type="Fairy"]     { border-left-color: var(--type-fairy); }
+.card-tile[data-type="Dragon"]    { border-left-color: var(--type-dragon); }
+.card-tile[data-type="Colorless"] { border-left-color: var(--type-colorless); }
+
+.empty-state { text-align: center; padding: 60px 20px; color: var(--paper-dim); }
+.empty-state p { margin: 4px 0; }
+.empty-sub { font-size: 14px; }
+
+dialog {
+  background: var(--ink-panel);
+  color: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  padding: 22px;
+  max-width: 420px;
+  width: 90vw;
+}
+
+dialog::backdrop { background: rgba(10,10,14,0.7); }
+
+#card-dialog-content { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+#card-dialog-content img { width: 100%; max-width: 260px; align-self: center; border-radius: 8px; }
+#card-dialog-content h2 { font-family: var(--font-display); margin: 0; font-size: 22px; }
+#card-dialog-content .dialog-meta { color: var(--paper-dim); font-size: 13px; margin: 0; }
+#card-dialog-close { width: 100%; }
+
+.app-footer {
+  margin-top: 48px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--paper-dim);
+  font-size: 12.5px;
+}
+
+@media (max-width: 480px) {
+  .app-header h1 { font-size: 30px; }
+  .card-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .search-bar { flex-direction: column; }
+  .search-bar button[type="submit"] { padding: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-tile { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark">▸</span>
+      <h1>Card Binder</h1>
+    </div>
+    <p class="tagline">Search the full Pokémon TCG catalog. Keep a list of what you still need.</p>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="search" role="tab" aria-selected="true">Find cards</button>
+    <button class="tab" data-tab="binder" role="tab" aria-selected="false">
+      My list <span class="tab-count" id="binder-count">0</span>
+    </button>
+  </nav>
+
+  <!-- SEARCH PANEL -->
+  <section class="panel active" id="panel-search">
+    <form class="search-bar" id="search-form">
+      <input
+        type="text"
+        id="search-input"
+        placeholder="Search by card name — e.g. Charizard, Pikachu, Gengar..."
+        autocomplete="off"
+      >
+      <button type="submit">Search</button>
+    </form>
+
+    <p class="hint">Tip: partial names work — try "chu" or "eevee".</p>
+
+    <div class="status-line" id="search-status"></div>
+
+    <div class="card-grid" id="search-results"></div>
+  </section>
+
+  <!-- BINDER PANEL -->
+  <section class="panel" id="panel-binder">
+    <div class="binder-toolbar">
+      <input
+        type="text"
+        id="binder-filter"
+        placeholder="Filter your list..."
+        autocomplete="off"
+      >
+      <div class="binder-toolbar-actions">
+        <span class="binder-total" id="binder-total"></span>
+        <button type="button" id="export-btn" class="ghost-btn">Export</button>
+        <button type="button" id="clear-btn" class="ghost-btn danger">Clear all</button>
+      </div>
+    </div>
+
+    <div class="status-line" id="binder-status"></div>
+
+    <div class="card-grid" id="binder-results"></div>
+
+    <div class="empty-state" id="binder-empty" hidden>
+      <p>Your list is empty.</p>
+      <p class="empty-sub">Go to <strong>Find cards</strong> and add the ones you're missing.</p>
+    </div>
+  </section>
+
+  <footer class="app-footer">
+    <p>Card data & images from <a href="https://tcgdex.dev" target="_blank" rel="noopener">TCGdex</a> — an open, free Pokémon TCG database. Your list is saved only in this browser.</p>
+  </footer>
+
+</div>
+
+<!-- Card detail dialog -->
+<dialog id="card-dialog">
+  <div id="card-dialog-content"></div>
+  <button type="button" id="card-dialog-close" class="ghost-btn">Close</button>
+</dialog>
+
+<template id="card-tile-template">
+  <article class="card-tile">
+    <button type="button" class="card-thumb-btn">
+      <img class="card-thumb" loading="lazy" alt="">
+    </button>
+    <div class="card-info">
+      <p class="card-name"></p>
+      <p class="card-meta"></p>
+    </div>
+    <button type="button" class="add-btn">Add to list</button>
+  </article>
+</template>
+
+<script>
+// ---------------------------------------------------------------
+// Card Binder — a personal Pokémon TCG "need list" tracker
+// Data source: TCGdex (https://tcgdex.dev), a free, open, no-key API
+// ---------------------------------------------------------------
+
+const API_BASE = "https://api.tcgdex.net/v2/en";
+const STORAGE_KEY = "card-binder:list:v1";
+
+const el = (sel, root = document) => root.querySelector(sel);
+const els = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+
+// ---------------------------------------------------------------
+// Storage
+// ---------------------------------------------------------------
+
+function loadBinder() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveBinder(list) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+
+let binder = loadBinder();
+
+function isSaved(cardId) {
+  return binder.some((c) => c.id === cardId);
+}
+
+function addToBinder(card) {
+  if (isSaved(card.id)) return;
+  binder.push({
+    id: card.id,
+    name: card.name,
+    image: card.image || null,
+    setName: card.set?.name || null,
+    rarity: card.rarity || null,
+    localId: card.localId || null,
+    primaryType: (card.types && card.types[0]) || null,
+    addedAt: Date.now(),
+  });
+  saveBinder(binder);
+  renderBinderCount();
+}
+
+function removeFromBinder(cardId) {
+  binder = binder.filter((c) => c.id !== cardId);
+  saveBinder(binder);
+  renderBinderCount();
+}
+
+// ---------------------------------------------------------------
+// API helpers
+// ---------------------------------------------------------------
+
+async function getFullCard(cardId) {
+  const res = await fetch(`${API_BASE}/cards/${encodeURIComponent(cardId)}`);
+  if (!res.ok) throw new Error(`Card lookup failed (${res.status})`);
+  return res.json();
+}
+
+function thumbUrl(image, quality = "low") {
+  if (!image) return "";
+  return `${image}/${quality}.webp`;
+}
+
+// ---------------------------------------------------------------
+// Rendering — search results
+// ---------------------------------------------------------------
+
+const tileTemplate = el("#card-tile-template");
+
+function buildTile({ id, name, image, metaText, type, savedState }) {
+  const node = tileTemplate.content.firstElementChild.cloneNode(true);
+  node.dataset.cardId = id;
+  if (type) node.dataset.type = type;
+
+  const img = el(".card-thumb", node);
+  img.src = thumbUrl(image, "low");
+  img.alt = name;
+
+  el(".card-name", node).textContent = name;
+  el(".card-meta", node).textContent = metaText || "";
+
+  const btn = el(".add-btn", node);
+  if (savedState === "saved") {
+    btn.textContent = "✓ In list";
+    btn.classList.add("in-list");
+  } else if (savedState === "remove") {
+    btn.textContent = "Remove";
+    btn.classList.add("remove");
+  } else {
+    btn.textContent = "Add to list";
+  }
+
+  return node;
+}
+
+function renderSearchResults(cards) {
+  const grid = el("#search-results");
+  grid.innerHTML = "";
+
+  cards.forEach((card) => {
+    const saved = isSaved(card.id);
+    const tile = buildTile({
+      id: card.id,
+      name: card.name,
+      image: card.image,
+      metaText: card.localId ? `#${card.localId}` : "",
+      savedState: saved ? "saved" : null,
+    });
+
+    el(".card-thumb-btn", tile).addEventListener("click", () => openCardDialog(card.id));
+
+    el(".add-btn", tile).addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      if (isSaved(card.id)) return;
+      btn.disabled = true;
+      btn.textContent = "Adding…";
+      try {
+        const full = await getFullCard(card.id);
+        addToBinder(full);
+        btn.textContent = "✓ In list";
+        btn.classList.add("in-list");
+      } catch (err) {
+        btn.textContent = "Failed — retry";
+        btn.disabled = false;
+      }
+    });
+
+    grid.appendChild(tile);
+  });
+}
+
+// ---------------------------------------------------------------
+// Rendering — binder (my list)
+// ---------------------------------------------------------------
+
+function renderBinder(filterText = "") {
+  const grid = el("#binder-results");
+  const empty = el("#binder-empty");
+  grid.innerHTML = "";
+
+  const term = filterText.trim().toLowerCase();
+  const items = binder
+    .slice()
+    .sort((a, b) => b.addedAt - a.addedAt)
+    .filter((c) => !term || c.name.toLowerCase().includes(term));
+
+  if (binder.length === 0) {
+    empty.hidden = false;
+    grid.hidden = true;
+  } else {
+    empty.hidden = true;
+    grid.hidden = false;
+
+    items.forEach((card) => {
+      const metaBits = [card.setName, card.rarity, card.localId ? `#${card.localId}` : null]
+        .filter(Boolean)
+        .join(" · ");
+
+      const tile = buildTile({
+        id: card.id,
+        name: card.name,
+        image: card.image,
+        metaText: metaBits,
+        type: card.primaryType,
+        savedState: "remove",
+      });
+
+      el(".card-thumb-btn", tile).addEventListener("click", () => openCardDialog(card.id));
+      el(".add-btn", tile).addEventListener("click", () => {
+        removeFromBinder(card.id);
+        renderBinder(el("#binder-filter").value);
+        const searchTile = el(`#search-results .card-tile[data-card-id="${card.id}"] .add-btn`);
+        if (searchTile) {
+          searchTile.textContent = "Add to list";
+          searchTile.classList.remove("in-list");
+          searchTile.disabled = false;
+        }
+      });
+
+      grid.appendChild(tile);
+    });
+  }
+
+  el("#binder-total").textContent = binder.length
+    ? `${binder.length} card${binder.length === 1 ? "" : "s"}`
+    : "";
+}
+
+function renderBinderCount() {
+  el("#binder-count").textContent = binder.length;
+  if (el("#panel-binder").classList.contains("active")) {
+    renderBinder(el("#binder-filter").value);
+  }
+}
+
+// ---------------------------------------------------------------
+// Card detail dialog
+// ---------------------------------------------------------------
+
+const dialog = el("#card-dialog");
+
+async function openCardDialog(cardId) {
+  const content = el("#card-dialog-content");
+  content.innerHTML = "<p>Loading…</p>";
+  dialog.showModal();
+  try {
+    const card = await getFullCard(cardId);
+    const meta = [card.set?.name, card.rarity, card.category, card.hp ? `${card.hp} HP` : null]
+      .filter(Boolean)
+      .join(" · ");
+    content.innerHTML = `
+      <img src="${thumbUrl(card.image, "high")}" alt="${card.name}">
+      <h2>${card.name}</h2>
+      <p class="dialog-meta">${meta}</p>
+    `;
+  } catch (err) {
+    content.innerHTML = "<p>Couldn't load this card. Try again.</p>";
+  }
+}
+
+el("#card-dialog-close").addEventListener("click", () => dialog.close());
+dialog.addEventListener("click", (e) => {
+  if (e.target === dialog) dialog.close();
+});
+
+// ---------------------------------------------------------------
+// Search behaviour
+// ---------------------------------------------------------------
+
+let searchAbort = null;
+
+async function runSearch(query) {
+  const status = el("#search-status");
+  const grid = el("#search-results");
+
+  if (!query.trim()) {
+    grid.innerHTML = "";
+    status.textContent = "";
+    status.classList.remove("error");
+    return;
+  }
+
+  if (searchAbort) searchAbort.abort();
+  searchAbort = new AbortController();
+
+  status.textContent = "Searching…";
+  status.classList.remove("error");
+
+  try {
+    const url = `${API_BASE}/cards?name=${encodeURIComponent(query)}&pagination:itemsPerPage=48`;
+    const res = await fetch(url, { signal: searchAbort.signal });
+    if (!res.ok) throw new Error(`Search failed (${res.status})`);
+    const cards = await res.json();
+
+    if (!cards.length) {
+      status.textContent = `No cards found for "${query}".`;
+      grid.innerHTML = "";
+      return;
+    }
+
+    status.textContent = `${cards.length} result${cards.length === 1 ? "" : "s"}${cards.length === 48 ? " (showing first 48)" : ""}`;
+    renderSearchResults(cards);
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    status.textContent = "Couldn't reach the card database. Check your connection and try again.";
+    status.classList.add("error");
+    grid.innerHTML = "";
+  }
+}
+
+function debounce(fn, delay) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), delay);
+  };
+}
+
+const debouncedSearch = debounce((q) => runSearch(q), 400);
+
+el("#search-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  runSearch(el("#search-input").value);
+});
+
+el("#search-input").addEventListener("input", (e) => {
+  debouncedSearch(e.target.value);
+});
+
+// ---------------------------------------------------------------
+// Binder filter, export, clear
+// ---------------------------------------------------------------
+
+el("#binder-filter").addEventListener("input", (e) => renderBinder(e.target.value));
+
+el("#export-btn").addEventListener("click", () => {
+  if (!binder.length) return;
+  const lines = binder
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((c) => `${c.name}${c.setName ? ` — ${c.setName}` : ""}${c.localId ? ` (#${c.localId})` : ""}`);
+  const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "pokemon-card-list.txt";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+el("#clear-btn").addEventListener("click", () => {
+  if (!binder.length) return;
+  if (confirm("Clear your entire list? This can't be undone.")) {
+    binder = [];
+    saveBinder(binder);
+    renderBinderCount();
+  }
+});
+
+// ---------------------------------------------------------------
+// Tabs
+// ---------------------------------------------------------------
+
+els(".tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    els(".tab").forEach((t) => {
+      t.classList.remove("active");
+      t.setAttribute("aria-selected", "false");
+    });
+    tab.classList.add("active");
+    tab.setAttribute("aria-selected", "true");
+
+    const target = tab.dataset.tab;
+    els(".panel").forEach((p) => p.classList.remove("active"));
+    el(`#panel-${target}`).classList.add("active");
+
+    if (target === "binder") renderBinder(el("#binder-filter").value);
+  });
+});
+
+// ---------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------
+
+renderBinderCount();
+</script>
+</body>
+</html>
