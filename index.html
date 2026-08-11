@@ -1971,7 +1971,7 @@ function renderPageFace(leaf, myBinderObj) {
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
       removeBtn.className = "binder-slot-remove";
-      removeBtn.title = `Remove ${slotCard.name}`;
+      removeBtn.title = `Move ${slotCard.name} to pile`;
       removeBtn.textContent = "×";
       removeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -1988,8 +1988,14 @@ function renderPageFace(leaf, myBinderObj) {
       slot.addEventListener("dragend", clearSelection);
 
       slot.addEventListener("click", () => {
-        if (selectedSource) completeMoveTo(loc);
-        else openCardDialog(slotCard.id);
+        if (selectedSource) {
+          completeMoveTo(loc);
+        } else {
+          openCardDialog(slotCard.id, {
+            label: "Delete completely",
+            onAction: () => deleteCardCompletely(myBinderObj.id, loc),
+          });
+        }
       });
     } else {
       slot.addEventListener("click", () => {
@@ -2064,8 +2070,8 @@ function renderPile(myBinderObj) {
     viewBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       openCardDialog(card.id, {
-        label: "Remove from pile",
-        onAction: () => removeCardFromPile(myBinderObj.id, pileIdx),
+        label: "Delete completely",
+        onAction: () => deleteCardCompletely(myBinderObj.id, loc),
       });
     });
     item.appendChild(viewBtn);
@@ -2086,10 +2092,18 @@ function renderPile(myBinderObj) {
   });
 }
 
-function removeCardFromPile(myBinderId, pileIndex) {
+// Fully removes a card from the binder — whether it's sitting in the pile
+// or placed on a page — as opposed to the slot's small "×" button, which
+// only un-places a card back into the pile (non-destructive, for
+// rearranging). This is the hard delete.
+function deleteCardCompletely(myBinderId, loc) {
   const myBinderObj = findMyBinder(myBinderId);
   if (!myBinderObj) return;
-  myBinderObj.pile.splice(pileIndex, 1);
+  if (loc.type === "pile") {
+    myBinderObj.pile.splice(loc.pileIndex, 1);
+  } else {
+    myBinderObj.pages[loc.pageIndex][loc.slotIndex] = null;
+  }
   saveMyBinders();
   renderBinderDetail();
 }
