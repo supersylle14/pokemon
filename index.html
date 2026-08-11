@@ -367,22 +367,6 @@ button { font-family: var(--font-body); cursor: pointer; }
   color: var(--paper);
 }
 
-.thumb-search-link {
-  display: inline-block;
-  border: 1px solid rgba(232,178,61,0.35);
-  color: var(--gold);
-  font-family: var(--font-body);
-  font-size: 11px;
-  text-decoration: none;
-  padding: 4px 10px;
-  border-radius: 999px;
-}
-
-.thumb-search-link:hover {
-  border-color: var(--gold);
-  background: rgba(232,178,61,0.1);
-}
-
 /* Holo sparkles — a few small twinkling sparks in the corner, only shown
    when the API says this print has a holo finish. Sits outside the
    overflow-hidden thumb wrap so sparks can peek slightly past the edge. */
@@ -1388,114 +1372,70 @@ function isHoloCard(card) {
 // Not every image exists at every quality/format on TCGdex — and for some
 // sets (older/niche ones like Skyridge specifically), TCGdex's own image
 // coverage genuinely has gaps that haven't been filled in yet. When that
-// happens, fall back to pokemontcg.io, a second long-established,
-// independent database.
+// happens, fall back to images.pokemontcg.io, a second long-established
+// database. Both databases mostly use the same {setId}-{localId} card ID
+// scheme (e.g. "ecard3-H9"), so the ID we already have is reused directly.
 //
-// This used to just guess a fallback image URL from the card's ID (both
-// databases mostly use the same {setId}-{localId} scheme). That was wrong
-// in a way that's easy to miss: pokemontcg.io's image host doesn't 404 for
-// an ID it doesn't recognize — it quietly serves a generic Pokémon card
-// *back* image with a normal 200 OK. A guessed URL that happened to be
-// slightly wrong (e.g. TCGdex zero-pads some promo numbers like "H09"
-// where pokemontcg.io uses "H9") would "succeed" by loading that generic
-// back instead of failing — which looks like a real image and isn't one.
-// Querying their actual card API first and only trusting an image URL it
-// explicitly returns avoids the trap entirely: a card that's genuinely not
-// in their database comes back as a proper 404 from the API, full stop.
-const pokemonTcgIoCache = new Map();
-
-function normalizeIdForPokemonTcgIo(cardId) {
-  const dash = cardId.lastIndexOf("-");
-  if (dash <= 0) return cardId;
-  const setId = cardId.slice(0, dash);
-  // Strip leading zeros TCGdex sometimes adds to promo/holo numbers
-  // (e.g. "H09" → "H9") that pokemontcg.io doesn't use.
-  const localId = cardId.slice(dash + 1).replace(/^([A-Za-z]*)0+(\d)/, "$1$2");
-  return `${setId}-${localId}`;
+// One real wrinkle: TCGdex zero-pads some promo/holo numbers (e.g. "H09")
+// where pokemontcg.io doesn't (e.g. "H9") — normalize that away so the
+// guessed URL actually points at the right card instead of a mismatch.
+function normalizeLocalIdForPokemonTcgIo(localId) {
+  return localId.replace(/^([A-Za-z]*)0+(\d)/, "$1$2");
 }
 
-function fetchPokemonTcgIoImages(cardId) {
-  if (pokemonTcgIoCache.has(cardId)) return pokemonTcgIoCache.get(cardId);
-  const promise = (async () => {
-    try {
-      const lookupId = normalizeIdForPokemonTcgIo(cardId);
-      const res = await fetch(`https://api.pokemontcg.io/v2/cards/${encodeURIComponent(lookupId)}`);
-      if (!res.ok) return null; // genuinely not in their database
-      const json = await res.json();
-      const images = json?.data?.images;
-      if (!images) return null;
-      return [images.large, images.small].filter(Boolean);
-    } catch {
-      return null; // network hiccup or CORS — fall through to our own placeholder
+function imageCandidates(imageBase, cardId) {
+  const candidates = [];
+  if (imageBase) {
+    candidates.push(
+      `${imageBase}/low.webp`,
+      `${imageBase}/high.webp`,
+      `${imageBase}/low.png`,
+      `${imageBase}/high.png`,
+    );
+  }
+  if (cardId) {
+    const dash = cardId.lastIndexOf("-");
+    if (dash > 0) {
+      const setId = cardId.slice(0, dash);
+      const localId = normalizeLocalIdForPokemonTcgIo(cardId.slice(dash + 1));
+      candidates.push(
+        `https://images.pokemontcg.io/${setId}/${localId}_hires.png`,
+        `https://images.pokemontcg.io/${setId}/${localId}.png`,
+      );
     }
-  })();
-  pokemonTcgIoCache.set(cardId, promise);
-  return promise;
-}
-
-function imageCandidates(imageBase) {
-  if (!imageBase) return [];
-  return [
-    `${imageBase}/low.webp`,
-    `${imageBase}/high.webp`,
-    `${imageBase}/low.png`,
-    `${imageBase}/high.png`,
-  ];
+  }
+  return candidates;
 }
 
 function setupImage(imgEl, imageBase, name, setName, cardId) {
-  const callId = (imgEl._setupImageCallId = (imgEl._setupImageCallId || 0) + 1);
-  const tcgdexCandidates = imageCandidates(imageBase);
+  const candidates = imageCandidates(imageBase, cardId);
+  if (!candidates.length) {
+    showImagePlaceholder(imgEl, name, null); // no URL at all — nothing to retry
+    return;
+  }
+
   let idx = 0;
 
-  const attemptList = (list, onExhausted) => {
-    imgEl.onload = () => {
-      imgEl.onerror = null;
-    };
-    imgEl.onerror = () => {
-      idx += 1;
-      tryNext();
-    };
-    const tryNext = () => {
-      if (idx >= list.length) {
-        onExhausted();
-        return;
-      }
-      imgEl.src = list[idx];
-    };
-    tryNext();
-  };
-
-  const giveUp = () => showImagePlaceholder(imgEl, name, () => setupImage(imgEl, imageBase, name, setName, cardId), setName);
-
-  const tryFallback = async () => {
-    idx = 0;
-    if (!cardId) {
-      giveUp();
+  const attempt = () => {
+    if (idx >= candidates.length) {
+      showImagePlaceholder(imgEl, name, () => setupImage(imgEl, imageBase, name, setName, cardId));
       return;
     }
-    const urls = await fetchPokemonTcgIoImages(cardId);
-    if (imgEl._setupImageCallId !== callId) return; // a newer call has since taken over this element
-    if (urls && urls.length) {
-      attemptList(urls, giveUp);
-    } else {
-      giveUp();
-    }
+    imgEl.src = candidates[idx];
   };
 
-  if (tcgdexCandidates.length) {
-    attemptList(tcgdexCandidates, tryFallback);
-  } else {
-    tryFallback();
-  }
+  imgEl.onload = () => {
+    imgEl.onerror = null;
+  };
+  imgEl.onerror = () => {
+    idx += 1;
+    attempt();
+  };
+
+  attempt();
 }
 
-function imageSearchUrl(name, setName) {
-  const query = setName ? `${name} ${setName} pokemon card` : `${name} pokemon card`;
-  return `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`;
-}
-
-function showImagePlaceholder(imgEl, name, retry, setName) {
+function showImagePlaceholder(imgEl, name, retry) {
   imgEl.onerror = null;
   imgEl.style.display = "none";
   // Use the image's own parent rather than requiring a specific ".card-thumb-wrap"
@@ -1517,19 +1457,6 @@ function showImagePlaceholder(imgEl, name, retry, setName) {
   const label = document.createElement("span");
   label.textContent = name || "No image";
   ph.appendChild(label);
-
-  // TCGdex is community-sourced and some sets — older or niche ones like
-  // Skyridge — still have real gaps in image coverage. Since we can't
-  // conjure an image that doesn't exist in the database, at least make it
-  // one click to go look the card up elsewhere.
-  const searchLink = document.createElement("a");
-  searchLink.className = "thumb-search-link";
-  searchLink.href = imageSearchUrl(name, setName);
-  searchLink.target = "_blank";
-  searchLink.rel = "noopener";
-  searchLink.textContent = "🔍 Search image";
-  searchLink.addEventListener("click", (e) => e.stopPropagation());
-  ph.appendChild(searchLink);
 
   if (retry) {
     const retryBtn = document.createElement("button");
