@@ -608,35 +608,18 @@ function isHoloCard(card) {
   return HOLO_RARITY_KEYWORDS.some((kw) => rarity.includes(kw));
 }
 
-// TCGdex has no hard rate limit, but does ask API consumers to "be
-// considerate" — and a page with a few hundred card tiles all requesting
-// images at once is not considerate. This caps how many images load
-// simultaneously; everything else waits its turn in a queue.
-const MAX_CONCURRENT_IMAGE_LOADS = 8;
-let activeImageLoads = 0;
-const imageLoadQueue = [];
-
-function runImageTask(task) {
-  imageLoadQueue.push(task);
-  pumpImageQueue();
-}
-
-function pumpImageQueue() {
-  while (activeImageLoads < MAX_CONCURRENT_IMAGE_LOADS && imageLoadQueue.length) {
-    const task = imageLoadQueue.shift();
-    activeImageLoads += 1;
-    task(() => {
-      activeImageLoads -= 1;
-      pumpImageQueue();
-    });
-  }
-}
-
-// Not every image exists at every quality/format, and a small share of
-// requests can fail transiently (especially under the queueing above) rather
-// than because the image is genuinely missing. Try each candidate URL twice
-// with a short pause before moving to the next, and only show the "no image"
-// placeholder once every option has actually been exhausted.
+// Not every image exists at every quality/format. Try a few before giving up
+// and showing a text placeholder instead of a broken image icon.
+//
+// This used to run through a hand-rolled concurrency queue to avoid loading
+// too many images at once. That queue caused two real bugs: a dialog image
+// (which the user is looking at *right now*) could get stuck behind a large
+// backlog of off-screen grid thumbnails, and a watchdog timer meant to
+// prevent stalls could fire before a lazy-loaded image had even started
+// fetching. The grid's <img loading="lazy"> attribute already tells the
+// browser to defer off-screen images and it does this correctly on its own
+// — there's no need to reimplement that ourselves, and doing so only made
+// things worse. This version just chains through candidate URLs directly.
 function imageCandidates(imageBase) {
   if (!imageBase) return [];
   return [
@@ -654,45 +637,25 @@ function setupImage(imgEl, imageBase, name) {
     return;
   }
 
-  runImageTask((done) => {
-    let idx = 0;
-    let settled = false;
-    let watchdog = null;
+  let idx = 0;
 
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(watchdog);
-      imgEl.onload = null;
-      imgEl.onerror = null;
-      done();
-    };
+  const attempt = () => {
+    if (idx >= candidates.length) {
+      showImagePlaceholder(imgEl, name, () => setupImage(imgEl, imageBase, name));
+      return;
+    }
+    imgEl.src = candidates[idx];
+  };
 
-    const attempt = () => {
-      if (idx >= candidates.length) {
-        showImagePlaceholder(imgEl, name, () => setupImage(imgEl, imageBase, name));
-        finish();
-        return;
-      }
-      clearTimeout(watchdog);
-      // A hung request (no load AND no error event) must not be able to
-      // block this slot forever — that would stall every image queued
-      // behind it. Give each attempt a few seconds, then move on.
-      watchdog = setTimeout(() => {
-        idx += 1;
-        attempt();
-      }, 6000);
-      imgEl.src = candidates[idx];
-    };
-
-    imgEl.onload = finish;
-    imgEl.onerror = () => {
-      idx += 1;
-      attempt();
-    };
-
+  imgEl.onload = () => {
+    imgEl.onerror = null;
+  };
+  imgEl.onerror = () => {
+    idx += 1;
     attempt();
-  });
+  };
+
+  attempt();
 }
 
 function showImagePlaceholder(imgEl, name, retry) {
