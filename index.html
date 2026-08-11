@@ -697,15 +697,24 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 .binder-face-toolbar { font-size: 11.5px; }
 .binder-face-toolbar .ghost-btn { padding: 5px 10px; font-size: 11.5px; }
 
-/* Front/back covers — plain panels bookending the real pages, like the
-   inside of a physical binder's cover. */
-.binder-cover {
+/* Front/back covers, and the "sheet" behind a real page — both use the same
+   panel treatment so every face of the open binder reads as part of one
+   physical book, and both get their height computed from the binder's own
+   cols/rows (via inline style, set in JS) so a cover and a real page are
+   always exactly the same size. */
+.binder-cover,
+.binder-page-sheet {
   width: 100%;
   max-width: 380px;
-  aspect-ratio: 4 / 5;
   border-radius: 14px;
   background: linear-gradient(145deg, var(--ink-panel-raised), var(--ink-panel));
   border: 1px solid var(--line-soft);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  position: relative;
+}
+
+.binder-cover {
+  aspect-ratio: 4 / 5; /* fallback only — JS sets the real ratio per binder */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -713,10 +722,18 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
   gap: 10px;
   text-align: center;
   padding: 30px;
-  position: relative;
 }
 
-.binder-cover::before {
+.binder-page-sheet {
+  padding: 16px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.binder-cover::before,
+.binder-page-sheet::before {
   content: "";
   position: absolute;
   left: 18px;
@@ -726,6 +743,14 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
   border-radius: 2px;
   background: linear-gradient(180deg, var(--gold), var(--holo));
   opacity: 0.6;
+}
+
+/* Hug the accent bar to the side nearest the center fold, like the binder's
+   rings would actually sit, rather than always on the left. */
+.binder-face:first-child .binder-cover::before,
+.binder-face:first-child .binder-page-sheet::before {
+  left: auto;
+  right: 18px;
 }
 
 .binder-cover-label {
@@ -749,7 +774,6 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
   display: grid;
   gap: 8px;
   width: 100%;
-  max-width: 380px;
 }
 
 .binder-slot {
@@ -757,13 +781,13 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
   aspect-ratio: 5 / 7;
   border-radius: 6px;
   background: var(--ink);
-  border: 1px dashed var(--line-soft);
+  border: 1.5px dashed rgba(255,255,255,0.22);
   overflow: hidden;
 }
 
-.binder-slot.filled { border-style: solid; cursor: pointer; }
+.binder-slot.filled { border-style: solid; border-color: rgba(255,255,255,0.16); cursor: pointer; }
 .binder-slot.filled:hover { border-color: var(--holo); }
-.binder-slot.drag-over { border-color: var(--gold); background: rgba(232,178,61,0.08); }
+.binder-slot.drag-over { border-color: var(--gold); background: rgba(232,178,61,0.12); }
 .binder-slot.rearrange-selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232,178,61,0.4); }
 
 .binder-slot img { width: 100%; height: 100%; object-fit: contain; display: block; }
@@ -796,6 +820,11 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 @media (max-width: 720px) {
   .binder-spread::before { display: none; }
   .binder-face:first-child, .binder-face:last-child { align-items: center; }
+  .binder-face:first-child .binder-cover::before,
+  .binder-face:first-child .binder-page-sheet::before {
+    left: 18px;
+    right: auto;
+  }
 }
 
 
@@ -1831,12 +1860,30 @@ function faceLabel(leaf, myBinderObj) {
   return `Page ${leaf.pageIndex + 1} of ${myBinderObj.pages.length}`;
 }
 
+// A real binder's cover is exactly as big as the pages inside it. Both
+// .binder-cover and .binder-page-sheet share a max-width (380px, see CSS),
+// so computing the height a page's own grid would naturally take — and
+// applying that same ratio to the cover — keeps every face of the open
+// binder the same size, whatever cols×rows this particular binder uses.
+function pageSheetAspectRatio(myBinderObj) {
+  const outerWidth = 380;
+  const padding = 16;
+  const gap = 8;
+  const innerWidth = outerWidth - padding * 2;
+  const slotWidth = (innerWidth - gap * (myBinderObj.cols - 1)) / myBinderObj.cols;
+  const slotHeight = slotWidth * (7 / 5); // cards are 5:7
+  const gridHeight = slotHeight * myBinderObj.rows + gap * (myBinderObj.rows - 1);
+  const outerHeight = gridHeight + padding * 2;
+  return `${outerWidth} / ${outerHeight}`;
+}
+
 function renderCoverFace(leaf, myBinderObj) {
   const face = document.createElement("div");
   face.className = "binder-face";
   const isFront = leaf.side === "front";
   const cover = document.createElement("div");
   cover.className = "binder-cover";
+  cover.style.aspectRatio = pageSheetAspectRatio(myBinderObj);
   cover.innerHTML = `
     <span class="binder-cover-label">${isFront ? "Front cover" : "Back cover"}</span>
     <p class="binder-cover-name"></p>
@@ -1854,6 +1901,10 @@ function renderPageFace(leaf, myBinderObj) {
   face.className = "binder-face";
   const pageIdx = leaf.pageIndex;
   const page = myBinderObj.pages[pageIdx];
+
+  const sheet = document.createElement("div");
+  sheet.className = "binder-page-sheet";
+  sheet.style.aspectRatio = pageSheetAspectRatio(myBinderObj);
 
   const slotGrid = document.createElement("div");
   slotGrid.className = "binder-slot-grid";
@@ -1918,7 +1969,8 @@ function renderPageFace(leaf, myBinderObj) {
     slotGrid.appendChild(slot);
   });
 
-  face.appendChild(slotGrid);
+  sheet.appendChild(slotGrid);
+  face.appendChild(sheet);
 
   const faceToolbar = document.createElement("div");
   faceToolbar.className = "binder-face-toolbar";
