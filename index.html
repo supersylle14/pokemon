@@ -247,6 +247,17 @@ button { font-family: var(--font-body); cursor: pointer; }
   pointer-events: none;
 }
 
+.holo-sparkle-group::before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 48px;
+  height: 48px;
+  background: radial-gradient(circle, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0) 68%);
+  filter: blur(1px);
+}
+
 .card-tile[data-holo="true"] .holo-sparkle-group,
 .dialog-thumb-btn[data-holo-dialog] .holo-sparkle-group {
   display: block;
@@ -254,21 +265,26 @@ button { font-family: var(--font-body); cursor: pointer; }
 
 .spark {
   position: absolute;
-  color: var(--gold);
-  filter: drop-shadow(0 0 2px rgba(255,255,255,0.8));
-  opacity: 0;
+  color: #fff;
+  filter:
+    drop-shadow(1px 0 0 rgba(20,14,0,0.85))
+    drop-shadow(-1px 0 0 rgba(20,14,0,0.85))
+    drop-shadow(0 1px 0 rgba(20,14,0,0.85))
+    drop-shadow(0 -1px 0 rgba(20,14,0,0.85))
+    drop-shadow(0 0 5px rgba(255,255,255,0.95));
+  opacity: 0.35;
   animation: spark-twinkle ease-in-out infinite;
 }
 
 .spark svg { display: block; width: 100%; height: 100%; }
 
-.spark-a { top: -4px;  right: 5px;  width: 18px; height: 18px; animation-duration: 2.4s; animation-delay: 0s; }
-.spark-b { top: 11px;  right: -4px; width: 11px; height: 11px; animation-duration: 2.1s; animation-delay: 0.7s; }
-.spark-c { top: 3px;   right: 17px; width: 8px;  height: 8px;  animation-duration: 1.9s; animation-delay: 1.3s; color: var(--holo); }
+.spark-a { top: -6px;  right: 3px;  width: 20px; height: 20px; animation-duration: 2.4s; animation-delay: 0s; }
+.spark-b { top: 12px;  right: -6px; width: 12px; height: 12px; animation-duration: 2.1s; animation-delay: 0.7s; }
+.spark-c { top: 2px;   right: 19px; width: 9px;  height: 9px;  animation-duration: 1.9s; animation-delay: 1.3s; }
 
 @keyframes spark-twinkle {
-  0%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); }
-  50%      { opacity: 1; transform: scale(1) rotate(12deg); }
+  0%, 100% { opacity: 0.35; transform: scale(0.55) rotate(0deg); }
+  50%      { opacity: 1;    transform: scale(1.15) rotate(12deg); }
 }
 
 .holo-badge {
