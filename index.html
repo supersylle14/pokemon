@@ -199,16 +199,87 @@ button { font-family: var(--font-body); cursor: pointer; }
 
 .card-thumb-btn { background: none; border: none; padding: 0; display: block; width: 100%; }
 
-.card-thumb {
+.card-thumb-wrap {
+  position: relative;
   width: 100%;
   aspect-ratio: 5 / 7;
-  object-fit: contain;
   border-radius: 6px;
   background: var(--ink);
+  overflow: hidden;
+}
+
+.card-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   display: block;
 }
 
-.card-info { flex: 1; min-height: 0; }
+.card-thumb-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 10px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  color: var(--paper-dim);
+  background: var(--ink-panel-raised);
+}
+
+/* Holo shimmer — only applied when the API says this print has a holo finish */
+.card-tile[data-holo="true"] .card-thumb-wrap,
+.card-thumb-wrap[data-holo-dialog] {
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.10), 0 0 16px rgba(124,140,224,0.30);
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.card-tile[data-holo="true"] .card-thumb-wrap::after,
+.card-thumb-wrap[data-holo-dialog]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 15%,
+    rgba(255,80,170,0.38) 30%,
+    rgba(255,210,90,0.38) 42%,
+    rgba(90,220,255,0.38) 54%,
+    rgba(160,100,255,0.38) 66%,
+    transparent 82%
+  );
+  background-size: 250% 250%;
+  mix-blend-mode: color-dodge;
+  animation: holo-sheen 3.4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes holo-sheen {
+  0%   { background-position: 0% 0%; }
+  100% { background-position: 200% 200%; }
+}
+
+.holo-badge {
+  display: inline-block;
+  width: fit-content;
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: #241a00;
+  background: linear-gradient(90deg, #ff8fd0, #ffe08a, #8fe3ff, #c39bff);
+  background-size: 300% 300%;
+  animation: holo-sheen 5s linear infinite;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin: 2px 0 0;
+}
+
+.card-info { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 2px; }
 
 .card-name { font-family: var(--font-display); font-weight: 600; font-size: 17px; margin: 0; line-height: 1.15; }
 .card-meta { margin: 3px 0 0; color: var(--paper-dim); font-size: 12.5px; }
@@ -280,6 +351,11 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 
 @media (prefers-reduced-motion: reduce) {
   .card-tile { transition: none; }
+  .card-tile[data-holo="true"] .card-thumb-wrap::after,
+  .holo-badge {
+    animation: none;
+    background-position: 35% 35%;
+  }
 }
 </style>
 </head>
@@ -362,10 +438,13 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 <template id="card-tile-template">
   <article class="card-tile">
     <button type="button" class="card-thumb-btn">
-      <img class="card-thumb" loading="lazy" alt="">
+      <div class="card-thumb-wrap">
+        <img class="card-thumb" loading="lazy" alt="">
+      </div>
     </button>
     <div class="card-info">
       <p class="card-name"></p>
+      <span class="holo-badge" hidden>✦ Holo</span>
       <p class="card-meta"></p>
     </div>
     <button type="button" class="add-btn">Add to list</button>
@@ -417,6 +496,7 @@ function addToBinder(card) {
     rarity: card.rarity || null,
     localId: card.localId || null,
     primaryType: (card.types && card.types[0]) || null,
+    holo: !!(card.variants && card.variants.holo),
     addedAt: Date.now(),
   });
   saveBinder(binder);
@@ -433,15 +513,67 @@ function removeFromBinder(cardId) {
 // API helpers
 // ---------------------------------------------------------------
 
-async function getFullCard(cardId) {
-  const res = await fetch(`${API_BASE}/cards/${encodeURIComponent(cardId)}`);
-  if (!res.ok) throw new Error(`Card lookup failed (${res.status})`);
-  return res.json();
+// Cache full card lookups so we never fetch the same card twice
+// (used for holo detection, add-to-list, and the detail dialog).
+const detailCache = new Map();
+
+function getFullCard(cardId) {
+  if (!detailCache.has(cardId)) {
+    const promise = fetch(`${API_BASE}/cards/${encodeURIComponent(cardId)}`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Card lookup failed (${res.status})`);
+        return res.json();
+      })
+      .catch((err) => {
+        detailCache.delete(cardId); // don't cache failures — allow retry
+        throw err;
+      });
+    detailCache.set(cardId, promise);
+  }
+  return detailCache.get(cardId);
 }
 
-function thumbUrl(image, quality = "low") {
-  if (!image) return "";
-  return `${image}/${quality}.webp`;
+// Not every card has an image (some energy/trainer/promo cards don't), and
+// not every image exists at every quality/format. Try a few options before
+// giving up and showing a text placeholder instead of a broken image icon.
+function imageCandidates(imageBase) {
+  if (!imageBase) return [];
+  return [
+    `${imageBase}/low.webp`,
+    `${imageBase}/high.webp`,
+    `${imageBase}/low.png`,
+    `${imageBase}/high.png`,
+  ];
+}
+
+function setupImage(imgEl, imageBase, name) {
+  const candidates = imageCandidates(imageBase);
+  if (!candidates.length) {
+    showImagePlaceholder(imgEl, name);
+    return;
+  }
+  let idx = 0;
+  imgEl.onerror = () => {
+    idx += 1;
+    if (idx < candidates.length) {
+      imgEl.src = candidates[idx];
+    } else {
+      showImagePlaceholder(imgEl, name);
+    }
+  };
+  imgEl.src = candidates[0];
+}
+
+function showImagePlaceholder(imgEl, name) {
+  imgEl.onerror = null;
+  imgEl.style.display = "none";
+  const wrap = imgEl.closest(".card-thumb-wrap");
+  if (wrap && !wrap.querySelector(".card-thumb-placeholder")) {
+    const ph = document.createElement("div");
+    ph.className = "card-thumb-placeholder";
+    ph.textContent = name || "No image";
+    wrap.appendChild(ph);
+  }
 }
 
 // ---------------------------------------------------------------
@@ -450,16 +582,18 @@ function thumbUrl(image, quality = "low") {
 
 const tileTemplate = el("#card-tile-template");
 
-function buildTile({ id, name, image, metaText, type, savedState }) {
+function buildTile({ id, name, image, metaText, type, holo, savedState }) {
   const node = tileTemplate.content.firstElementChild.cloneNode(true);
   node.dataset.cardId = id;
   if (type) node.dataset.type = type;
+  if (holo) node.dataset.holo = "true";
 
   const img = el(".card-thumb", node);
-  img.src = thumbUrl(image, "low");
   img.alt = name;
+  setupImage(img, image, name);
 
   el(".card-name", node).textContent = name;
+  el(".holo-badge", node).hidden = !holo;
   el(".card-meta", node).textContent = metaText || "";
 
   const btn = el(".add-btn", node);
@@ -474,6 +608,41 @@ function buildTile({ id, name, image, metaText, type, savedState }) {
   }
 
   return node;
+}
+
+// Search results only come back as "brief" objects (id, name, image) — we
+// don't know rarity or holo status until we fetch the full card. Rather than
+// fetching details for every result up front (slow, and wasteful for long
+// result lists), we lazily fetch details only once a tile actually scrolls
+// into view.
+const holoObserver = new IntersectionObserver(
+  (entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      holoObserver.unobserve(entry.target);
+      hydrateTileDetails(entry.target);
+    });
+  },
+  { rootMargin: "150px" }
+);
+
+async function hydrateTileDetails(tile) {
+  const id = tile.dataset.cardId;
+  try {
+    const full = await getFullCard(id);
+    if (full.variants && full.variants.holo) {
+      tile.dataset.holo = "true";
+      const badge = el(".holo-badge", tile);
+      if (badge) badge.hidden = false;
+    }
+    const metaEl = el(".card-meta", tile);
+    if (metaEl && full.set?.name) {
+      const bits = [full.set.name, full.rarity, full.localId ? `#${full.localId}` : null].filter(Boolean);
+      metaEl.textContent = bits.join(" · ");
+    }
+  } catch {
+    // Detail fetch failed silently — the tile still works, just without the extra info.
+  }
 }
 
 function renderSearchResults(cards) {
@@ -509,6 +678,7 @@ function renderSearchResults(cards) {
     });
 
     grid.appendChild(tile);
+    holoObserver.observe(tile);
   });
 }
 
@@ -545,6 +715,7 @@ function renderBinder(filterText = "") {
         image: card.image,
         metaText: metaBits,
         type: card.primaryType,
+        holo: card.holo,
         savedState: "remove",
       });
 
@@ -591,11 +762,15 @@ async function openCardDialog(cardId) {
     const meta = [card.set?.name, card.rarity, card.category, card.hp ? `${card.hp} HP` : null]
       .filter(Boolean)
       .join(" · ");
+    const holo = card.variants && card.variants.holo;
     content.innerHTML = `
-      <img src="${thumbUrl(card.image, "high")}" alt="${card.name}">
-      <h2>${card.name}</h2>
+      <div class="card-thumb-wrap" style="max-width:260px;align-self:center;aspect-ratio:5/7;"${holo ? ' data-holo-dialog' : ""}>
+        <img class="dialog-img" alt="${card.name}" style="width:100%;height:100%;object-fit:contain;">
+      </div>
+      <h2>${card.name}${holo ? ' <span class="holo-badge" style="vertical-align:middle;">✦ Holo</span>' : ""}</h2>
       <p class="dialog-meta">${meta}</p>
     `;
+    setupImage(el(".dialog-img", content), card.image, card.name);
   } catch (err) {
     content.innerHTML = "<p>Couldn't load this card. Try again.</p>";
   }
@@ -612,13 +787,27 @@ dialog.addEventListener("click", (e) => {
 
 let searchAbort = null;
 
+// Rendering thousands of tiles at once would be slow and isn't useful anyway —
+// cap what we draw, but always report the true match count so it's clear
+// when a search is being truncated (rather than just missing cards).
+const MAX_RENDERED = 300;
+const MIN_QUERY_LENGTH = 2;
+
 async function runSearch(query) {
   const status = el("#search-status");
   const grid = el("#search-results");
+  const trimmed = query.trim();
 
-  if (!query.trim()) {
+  if (!trimmed) {
     grid.innerHTML = "";
     status.textContent = "";
+    status.classList.remove("error");
+    return;
+  }
+
+  if (trimmed.length < MIN_QUERY_LENGTH) {
+    grid.innerHTML = "";
+    status.textContent = `Type at least ${MIN_QUERY_LENGTH} characters…`;
     status.classList.remove("error");
     return;
   }
@@ -630,19 +819,25 @@ async function runSearch(query) {
   status.classList.remove("error");
 
   try {
-    const url = `${API_BASE}/cards?name=${encodeURIComponent(query)}&pagination:itemsPerPage=48`;
+    // No pagination param = the API returns every match, not a capped page,
+    // so cards from every set actually show up.
+    const url = `${API_BASE}/cards?name=${encodeURIComponent(trimmed)}`;
     const res = await fetch(url, { signal: searchAbort.signal });
     if (!res.ok) throw new Error(`Search failed (${res.status})`);
     const cards = await res.json();
 
     if (!cards.length) {
-      status.textContent = `No cards found for "${query}".`;
+      status.textContent = `No cards found for "${trimmed}".`;
       grid.innerHTML = "";
       return;
     }
 
-    status.textContent = `${cards.length} result${cards.length === 1 ? "" : "s"}${cards.length === 48 ? " (showing first 48)" : ""}`;
-    renderSearchResults(cards);
+    const toRender = cards.slice(0, MAX_RENDERED);
+    status.textContent =
+      cards.length > MAX_RENDERED
+        ? `${cards.length} results — showing the first ${MAX_RENDERED}. Try a more specific search to narrow it down.`
+        : `${cards.length} result${cards.length === 1 ? "" : "s"}`;
+    renderSearchResults(toRender);
   } catch (err) {
     if (err.name === "AbortError") return;
     status.textContent = "Couldn't reach the card database. Check your connection and try again.";
