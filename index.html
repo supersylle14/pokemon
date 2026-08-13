@@ -504,6 +504,29 @@ button { font-family: var(--font-body); cursor: pointer; }
   margin: 2px 0 0;
 }
 
+.price-badge {
+  position: absolute;
+  bottom: 5px;
+  left: 5px;
+  background: rgba(10,10,14,0.82);
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  z-index: 1;
+}
+
+.price-badge.compact {
+  bottom: 2px;
+  left: 2px;
+  font-size: 7px;
+  padding: 1px 4px;
+  border-radius: 5px;
+}
+
 .card-info { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 2px; }
 
 .card-name { font-family: var(--font-display); font-weight: 600; font-size: 17px; margin: 0; line-height: 1.15; }
@@ -574,6 +597,8 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 #card-dialog-content img { width: 100%; max-width: 260px; align-self: center; border-radius: 8px; }
 #card-dialog-content h2 { font-family: var(--font-display); margin: 0; font-size: 22px; }
 #card-dialog-content .dialog-meta { color: var(--paper-dim); font-size: 13px; margin: 0; }
+#card-dialog-content .dialog-price { color: var(--gold); font-size: 15px; font-weight: 700; margin: 6px 0 0; }
+#card-dialog-content .dialog-price-source { color: var(--paper-dim); font-size: 11.5px; font-weight: 500; }
 
 /* ===== My Binders — overview ===== */
 
@@ -620,7 +645,8 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
   margin: 0;
 }
 
-.binder-card-meta { color: var(--paper-dim); font-size: 12.5px; margin: 2px 0 12px; }
+.binder-card-meta { color: var(--paper-dim); font-size: 12.5px; margin: 2px 0 4px; }
+.binder-card-value { color: var(--gold); font-size: 12.5px; font-weight: 600; margin: 0 0 12px; }
 
 .binder-card-actions { display: flex; gap: 8px; margin-top: auto; }
 .binder-card-actions button { flex: 1; }
@@ -1022,6 +1048,7 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
       >
       <div class="binder-toolbar-actions">
         <span class="binder-total" id="binder-total"></span>
+        <button type="button" id="refresh-prices-btn" class="ghost-btn">↻ Refresh prices</button>
         <button type="button" id="export-btn" class="ghost-btn">Export</button>
         <button type="button" id="clear-btn" class="ghost-btn danger">Clear all</button>
       </div>
@@ -1090,6 +1117,7 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
 
       <div class="binder-page-toolbar">
         <button type="button" id="binder-add-page-btn" class="ghost-btn">+ Add page</button>
+        <button type="button" id="binder-refresh-prices-btn" class="ghost-btn">↻ Refresh prices</button>
       </div>
     </div>
   </section>
@@ -1156,6 +1184,7 @@ dialog::backdrop { background: rgba(10,10,14,0.7); }
     <div class="card-thumb-btn" role="button" tabindex="0">
       <div class="card-thumb-wrap">
         <img class="card-thumb" loading="lazy" alt="">
+        <span class="price-badge" hidden></span>
       </div>
       <div class="holo-sparkle-group" aria-hidden="true">
         <span class="spark spark-a"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c.4 3.6 1.1 6.1 2.1 7.4 1.3 1.7 3.6 2.5 6.9 2.6-3.3.1-5.6.9-6.9 2.6-1 1.3-1.7 3.8-2.1 7.4-.4-3.6-1.1-6.1-2.1-7.4C8.6 11.5 6.3 10.7 3 10.6c3.3-.1 5.6-.9 6.9-2.6C10.9 6.7 11.6 4.2 12 0z"/></svg></span>
@@ -1211,6 +1240,7 @@ function isSaved(cardId) {
 // wishlist, and now slots inside My Binders too. Deliberately small: just
 // enough to render a tile without re-fetching from the API every time.
 function slimCard(card) {
+  const price = getCardmarketPrice(card);
   return {
     id: card.id,
     name: card.name,
@@ -1220,6 +1250,8 @@ function slimCard(card) {
     localId: card.localId || null,
     primaryType: (card.types && card.types[0]) || null,
     holo: isHoloCard(card),
+    priceEur: price ? price.price : null,
+    priceUpdated: price ? price.updated : null,
   };
 }
 
@@ -1334,13 +1366,20 @@ function addCardToPile(myBinderId, card) {
 function binderStats(myBinderObj) {
   let placed = 0;
   let total = 0;
+  let totalValue = 0;
   myBinderObj.pages.forEach((page) => {
     [page.front, page.back].forEach((side) => {
       total += side.length;
-      placed += side.filter((slot) => slot !== null).length;
+      side.forEach((slot) => {
+        if (slot) {
+          placed += 1;
+          totalValue += slot.priceEur || 0;
+        }
+      });
     });
   });
-  return { placed, total, pileCount: myBinderObj.pile.length };
+  myBinderObj.pile.forEach((card) => { totalValue += card.priceEur || 0; });
+  return { placed, total, pileCount: myBinderObj.pile.length, totalValue };
 }
 
 // A "location" describes where a card currently is (or is going):
@@ -1423,7 +1462,8 @@ function renderBindersTabCount() {
 // (used for holo detection, add-to-list, and the detail dialog).
 const detailCache = new Map();
 
-function getFullCard(cardId) {
+function getFullCard(cardId, forceRefresh = false) {
+  if (forceRefresh) detailCache.delete(cardId);
   if (!detailCache.has(cardId)) {
     const promise = fetch(`${API_BASE}/cards/${encodeURIComponent(cardId)}`)
       .then((res) => {
@@ -1459,6 +1499,35 @@ function isHoloCard(card) {
   if (card?.variants?.holo) return true;
   const rarity = (card?.rarity || "").trim().toLowerCase();
   return !NON_HOLO_RARITIES.has(rarity);
+}
+
+// TCGdex ships Cardmarket (EUR) and TCGPlayer (USD) pricing directly inside
+// the full card response under `pricing` — no separate endpoint needed.
+// Cardmarket's "trend" figure is the one Cardmarket itself treats as the
+// current representative price (smoother than a 1-day average, more
+// current than a 30-day one), so that's what we surface. Holo and
+// non-holo prints of the same card have separate figures (a "-holo"
+// suffixed field) — pick whichever matches this specific card. Some cards
+// simply aren't listed on Cardmarket at all, in which case this returns
+// null and callers should just omit the price rather than show a zero.
+function getCardmarketPrice(card) {
+  const cm = card?.pricing?.cardmarket;
+  if (!cm) return null;
+  const holo = isHoloCard(card);
+  const price = holo ? (cm["trend-holo"] ?? cm["avg-holo"]) : (cm.trend ?? cm.avg);
+  if (price == null) return null;
+  return { price, unit: cm.unit || "EUR", updated: cm.updated || null };
+}
+
+const priceFormatter = new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" });
+
+function formatPrice(amount, unit) {
+  if (unit && unit !== "EUR") {
+    // Shouldn't normally happen since we only read the cardmarket (EUR)
+    // figures, but don't silently mislabel a number if it ever does.
+    return `${amount.toFixed(2)} ${unit}`;
+  }
+  return priceFormatter.format(amount);
 }
 
 // Not every image exists at every quality/format on TCGdex — and for some
@@ -1571,7 +1640,18 @@ function showImagePlaceholder(imgEl, name, retry) {
 
 const tileTemplate = el("#card-tile-template");
 
-function buildTile({ id, name, image, metaText, type, holo, setName, savedState }) {
+function setPriceBadge(tile, priceEur) {
+  const badge = el(".price-badge", tile);
+  if (!badge) return;
+  if (priceEur == null) {
+    badge.hidden = true;
+    return;
+  }
+  badge.textContent = formatPrice(priceEur, "EUR");
+  badge.hidden = false;
+}
+
+function buildTile({ id, name, image, metaText, type, holo, setName, priceEur, savedState }) {
   const node = tileTemplate.content.firstElementChild.cloneNode(true);
   node.dataset.cardId = id;
   if (type) node.dataset.type = type;
@@ -1580,6 +1660,7 @@ function buildTile({ id, name, image, metaText, type, holo, setName, savedState 
   const img = el(".card-thumb", node);
   img.alt = name;
   setupImage(img, image, name, setName, id);
+  setPriceBadge(node, priceEur);
 
   // .card-thumb-btn is a div (not a real <button>) so a retry <button> can
   // legally live inside its placeholder without illegal button-in-button
@@ -1637,6 +1718,8 @@ function applyHydratedInfo(tile, full) {
     const bits = [full.set.name, full.rarity, full.localId ? `#${full.localId}` : null].filter(Boolean);
     metaEl.textContent = bits.join(" · ");
   }
+  const price = getCardmarketPrice(full);
+  setPriceBadge(tile, price ? price.price : null);
 }
 
 async function hydrateTileDetails(tile) {
@@ -1759,6 +1842,7 @@ function renderBinder(filterText = "") {
         type: card.primaryType,
         holo: card.holo,
         setName: card.setName,
+        priceEur: card.priceEur,
         savedState: "remove",
       });
 
@@ -1778,8 +1862,9 @@ function renderBinder(filterText = "") {
     });
   }
 
+  const totalValue = binder.reduce((sum, c) => sum + (c.priceEur || 0), 0);
   el("#binder-total").textContent = binder.length
-    ? `${binder.length} card${binder.length === 1 ? "" : "s"}`
+    ? `${binder.length} card${binder.length === 1 ? "" : "s"} · ${formatPrice(totalValue, "EUR")} total`
     : "";
 }
 
@@ -1816,6 +1901,10 @@ async function openCardDialog(cardId, actionConfig) {
       .filter(Boolean)
       .join(" · ");
     const holo = isHoloCard(card);
+    const price = getCardmarketPrice(card);
+    const priceLine = price
+      ? `${formatPrice(price.price, price.unit)} <span class="dialog-price-source">Cardmarket${holo ? " (holo)" : ""}</span>`
+      : "";
     content.innerHTML = `
       <div class="dialog-thumb-btn"${holo ? " data-holo-dialog" : ""} style="max-width:260px;align-self:center;position:relative;">
         <div class="card-thumb-wrap" style="aspect-ratio:5/7;">
@@ -1825,6 +1914,7 @@ async function openCardDialog(cardId, actionConfig) {
       </div>
       <h2>${card.name}${holo ? ' <span class="holo-badge" style="vertical-align:middle;">✦ Holo</span>' : ""}</h2>
       <p class="dialog-meta">${meta}</p>
+      ${priceLine ? `<p class="dialog-price">${priceLine}</p>` : ""}
     `;
     setupImage(el(".dialog-img", content), card.image, card.name, card.set?.name, card.id);
 
@@ -2076,13 +2166,14 @@ function renderBindersOverview() {
     .slice()
     .sort((a, b) => b.createdAt - a.createdAt)
     .forEach((myBinderObj) => {
-      const { placed, total, pileCount } = binderStats(myBinderObj);
+      const { placed, total, pileCount, totalValue } = binderStats(myBinderObj);
       const card = document.createElement("div");
       card.className = "binder-card";
       card.innerHTML = `
         <div class="binder-card-spine"></div>
         <p class="binder-card-name"></p>
         <p class="binder-card-meta"></p>
+        <p class="binder-card-value"></p>
         <div class="binder-card-actions">
           <button type="button" class="ghost-btn open-btn">Open</button>
           <button type="button" class="ghost-btn danger delete-btn">Delete</button>
@@ -2091,6 +2182,7 @@ function renderBindersOverview() {
       el(".binder-card-name", card).textContent = myBinderObj.name;
       el(".binder-card-meta", card).textContent =
         `${myBinderObj.cols}×${myBinderObj.rows} · ${myBinderObj.pages.length} page${myBinderObj.pages.length === 1 ? "" : "s"} · ${placed}/${total} placed${pileCount ? ` · ${pileCount} in pile` : ""}`;
+      el(".binder-card-value", card).textContent = `${formatPrice(totalValue, "EUR")} total value`;
 
       el(".open-btn", card).addEventListener("click", () => openMyBinder(myBinderObj.id));
       el(".delete-btn", card).addEventListener("click", () => {
@@ -2233,6 +2325,13 @@ function renderPageFace(leaf, myBinderObj) {
       setupImage(img, slotCard.image, slotCard.name, slotCard.setName, slotCard.id);
       slot.appendChild(img);
 
+      if (slotCard.priceEur != null) {
+        const priceTag = document.createElement("span");
+        priceTag.className = "price-badge";
+        priceTag.textContent = formatPrice(slotCard.priceEur, "EUR");
+        slot.appendChild(priceTag);
+      }
+
       const removeBtn = document.createElement("button");
       removeBtn.type = "button";
       removeBtn.className = "binder-slot-remove";
@@ -2320,12 +2419,19 @@ function renderPile(myBinderObj) {
     if (card.holo) item.dataset.holo = "true";
     if (isSameLocation(selectedSource, loc)) item.classList.add("rearrange-selected");
     item.draggable = true;
-    item.title = card.name;
+    item.title = card.priceEur != null ? `${card.name} — ${formatPrice(card.priceEur, "EUR")}` : card.name;
 
     const img = document.createElement("img");
     img.alt = card.name;
     setupImage(img, card.image, card.name, card.setName, card.id);
     item.appendChild(img);
+
+    if (card.priceEur != null) {
+      const priceTag = document.createElement("span");
+      priceTag.className = "price-badge compact";
+      priceTag.textContent = formatPrice(card.priceEur, "EUR");
+      item.appendChild(priceTag);
+    }
 
     const viewBtn = document.createElement("button");
     viewBtn.type = "button";
@@ -2392,9 +2498,9 @@ function renderBinderDetail() {
   }
 
   el("#binder-detail-name").textContent = myBinderObj.name;
-  const { placed, total, pileCount } = binderStats(myBinderObj);
+  const { placed, total, pileCount, totalValue } = binderStats(myBinderObj);
   el("#binder-detail-meta").textContent =
-    `${myBinderObj.cols}×${myBinderObj.rows} per page · ${placed}/${total} placed · ${pileCount} in pile`;
+    `${myBinderObj.cols}×${myBinderObj.rows} per page · ${placed}/${total} placed · ${pileCount} in pile · ${formatPrice(totalValue, "EUR")} total value`;
 
   renderPile(myBinderObj);
   renderRearrangeBanner();
@@ -2471,6 +2577,46 @@ el("#binder-add-page-btn").addEventListener("click", () => {
   const frontLeafIndex = 1 + newPageIndex * 2;
   currentSpreadIndex = Math.floor(frontLeafIndex / 2);
   renderBinderDetail();
+});
+
+function collectBinderCards(myBinderObj) {
+  const cards = [];
+  myBinderObj.pages.forEach((page) => {
+    [page.front, page.back].forEach((side) => {
+      side.forEach((card) => { if (card) cards.push(card); });
+    });
+  });
+  myBinderObj.pile.forEach((card) => cards.push(card));
+  return cards;
+}
+
+el("#binder-refresh-prices-btn").addEventListener("click", async () => {
+  const myBinderObj = findMyBinder(currentMyBinderId);
+  if (!myBinderObj) return;
+  const cards = collectBinderCards(myBinderObj);
+  if (!cards.length) return;
+
+  const btn = el("#binder-refresh-prices-btn");
+  btn.disabled = true;
+  btn.textContent = "Refreshing…";
+  try {
+    await Promise.all(
+      cards.map((card) =>
+        getFullCard(card.id, true)
+          .then((full) => {
+            const price = getCardmarketPrice(full);
+            card.priceEur = price ? price.price : null;
+            card.priceUpdated = price ? price.updated : null;
+          })
+          .catch(() => {}) // leave that one card's price as-is if the fetch fails
+      )
+    );
+    saveMyBinders();
+    renderBinderDetail();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "↻ Refresh prices";
+  }
 });
 
 el("#rearrange-cancel-btn").addEventListener("click", clearSelection);
@@ -2635,6 +2781,31 @@ async function addCardToBinderFlow(card) {
 // ---------------------------------------------------------------
 
 el("#binder-filter").addEventListener("input", (e) => renderBinder(e.target.value));
+
+el("#refresh-prices-btn").addEventListener("click", async () => {
+  if (!binder.length) return;
+  const btn = el("#refresh-prices-btn");
+  btn.disabled = true;
+  btn.textContent = "Refreshing…";
+  try {
+    const updated = await Promise.all(
+      binder.map((c) =>
+        getFullCard(c.id, true)
+          .then((full) => {
+            const price = getCardmarketPrice(full);
+            return { ...c, priceEur: price ? price.price : null, priceUpdated: price ? price.updated : null };
+          })
+          .catch(() => c) // leave that one card's price as-is if the fetch fails
+      )
+    );
+    binder = updated;
+    saveBinder(binder);
+    renderBinder(el("#binder-filter").value);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "↻ Refresh prices";
+  }
+});
 
 el("#export-btn").addEventListener("click", () => {
   if (!binder.length) return;
